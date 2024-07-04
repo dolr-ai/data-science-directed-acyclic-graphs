@@ -42,30 +42,12 @@ with DAG(
     #  catchup=False # enable if you don't want historical dag runs to run
 ) as dag:
 
-    # run_create_embed_query = BigQueryExecuteQueryOperator(
-    #     task_id="run_query",
-    #     sql=create_embed_query,
-    #     use_legacy_sql=False,
-    #     dag=dag,
-    # )
-
-    # get_data_object_table = BigQueryGetDataOperator(
-    #     task_id="get_data_from_bq_object_table",
-    #     dataset_id="test_yral_video",
-    #     table_id="video_object_table",
-    #     table_project_id="hot-or-not-feed-intelligence",
-    #     max_results=500000,
-    #     selected_fields="uri",
-    # )
-
-    # get_data_embeddings = BigQueryGetDataOperator(
-    #     task_id="get_data_from_bq_embeddings",
-    #     dataset_id="test_yral_video",
-    #     table_id="video_embeddings",
-    #     table_project_id="hot-or-not-feed-intelligence",
-    #     max_results=1000000,
-    #     selected_fields="uri",
-    # )
+    run_create_embed_query = BigQueryExecuteQueryOperator(
+        task_id="run_query",
+        sql=create_embed_query,
+        use_legacy_sql=False,
+        dag=dag,
+    )
 
     def get_data_from_bq(**kwargs):
         hook = BigQueryHook(use_legacy_sql=False)
@@ -75,7 +57,6 @@ with DAG(
             "SELECT DISTINCT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_embeddings`);"
         )
         result = cursor.fetchall()
-        print("result", result)
         return result
 
     fetch_data = PythonOperator(
@@ -87,16 +68,16 @@ with DAG(
     def extract_object_names(**kwargs):
         task_instance = kwargs["task_instance"]
         obj_table_rows = task_instance.xcom_pull(task_ids="fetch_data_from_bq")
-        print("obj_table_rows", obj_table_rows)
+        # print("obj_table_rows", obj_table_rows)
 
-        # object_names = []
-        # for uri in obj_table_rows:
-        #         # Extract object name from URI
-        #         object_name = uri.split("gs://")[1].split("/", 1)[1]
-        #         object_names.append(object_name)
+        object_names = []
+        for obj in obj_table_rows:
+            uri = obj[0]
+            object_name = uri.split("gs://")[1].split("/", 1)[1]
+            object_names.append(object_name)
 
         # Push the list of object names to XCom
-        # task_instance.xcom_push(key="object_names", value=object_names)
+        task_instance.xcom_push(key="object_names", value=object_names)
 
     process_uris = PythonOperator(
         task_id="process_uris",
@@ -104,30 +85,23 @@ with DAG(
         provide_context=True,
     )
 
-    # def delete_objs(**kwargs):
-    #     hook = GCSHook()
-    #     task_instance = kwargs["task_instance"]
-    #     array_objects = task_instance.xcom_pull(
-    #         task_ids="process_uris", key="object_names"
-    #     )
+    def delete_objs(**kwargs):
+        hook = GCSHook()
+        task_instance = kwargs["task_instance"]
+        array_objects = task_instance.xcom_pull(
+            task_ids="process_uris", key="object_names"
+        )
 
-    #     array_objects = list(set(array_objects))
+        array_objects = list(set(array_objects))
 
-    #     for arr in array_objects:
-    #         hook.delete(bucket_name="yral-videos", object_name=arr)
+        for arr in array_objects:
+            hook.delete(bucket_name="yral-videos", object_name=arr)
 
-    # delete_gcs_objects = PythonOperator(
-    #     task_id="delete_gcs_obj",
-    #     provide_context=True,
-    #     python_callable=delete_objs,
-    # )
+    delete_gcs_objects = PythonOperator(
+        task_id="delete_gcs_obj",
+        provide_context=True,
+        python_callable=delete_objs,
+    )
 
-    fetch_data >> process_uris
     # Define task dependencies
-    # (
-    #     run_create_embed_query
-    #     >> get_data_object_table
-    #     >> get_data_embeddings
-    #     >> process_uris
-    #     >> delete_gcs_objects
-    # )
+    (run_create_embed_query >> fetch_data >> process_uris >> delete_gcs_objects)
