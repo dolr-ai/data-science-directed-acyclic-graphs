@@ -5,6 +5,7 @@ from airflow.providers.google.cloud.operators.bigquery import (
 )
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
+from airflow.contrib.hooks.bigquery_hook import BigQueryHook
 from airflow.utils.dates import days_ago
 from datetime import datetime, timedelta
 
@@ -48,47 +49,55 @@ with DAG(
         dag=dag,
     )
 
-    get_data_object_table = BigQueryGetDataOperator(
-        task_id="get_data_from_bq_object_table",
-        dataset_id="test_yral_video",
-        table_id="video_object_table",
-        table_project_id="hot-or-not-feed-intelligence",
-        max_results=500000,
-        selected_fields="uri",
-    )
+    # get_data_object_table = BigQueryGetDataOperator(
+    #     task_id="get_data_from_bq_object_table",
+    #     dataset_id="test_yral_video",
+    #     table_id="video_object_table",
+    #     table_project_id="hot-or-not-feed-intelligence",
+    #     max_results=500000,
+    #     selected_fields="uri",
+    # )
 
-    get_data_embeddings = BigQueryGetDataOperator(
-        task_id="get_data_from_bq_embeddings",
-        dataset_id="test_yral_video",
-        table_id="video_embeddings",
-        table_project_id="hot-or-not-feed-intelligence",
-        max_results=1000000,
-        selected_fields="uri",
+    # get_data_embeddings = BigQueryGetDataOperator(
+    #     task_id="get_data_from_bq_embeddings",
+    #     dataset_id="test_yral_video",
+    #     table_id="video_embeddings",
+    #     table_project_id="hot-or-not-feed-intelligence",
+    #     max_results=1000000,
+    #     selected_fields="uri",
+    # )
+
+    def get_data_from_bq(**kwargs):
+        hook = BigQueryHook()
+        conn = hook.get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_embeddings`);"
+        )
+        result = cursor.fetchall()
+        print("result", result)
+        return result
+
+    fetch_data = PythonOperator(
+        task_id="fetch_data_from_bq",
+        provide_context=True,
+        python_callable=get_data_from_bq,
     )
 
     # Step 2: Process the list to extract object names
     def extract_object_names(**kwargs):
         task_instance = kwargs["task_instance"]
-        obj_table_rows = task_instance.xcom_pull(
-            task_ids="get_data_from_bq_object_table"
-        )
-        embedding_rows = task_instance.xcom_pull(task_ids="get_data_from_bq_embeddings")
+        obj_table_rows = task_instance.xcom_pull(task_ids="fetch_data_from_bq")
+        print("obj_table_rows", obj_table_rows)
 
-        obj_table_names = [row[0] for row in obj_table_rows]
-        embedding_names = set([row[0] for row in embedding_rows])
-
-        print(obj_table_names[0], len(obj_table_names))
-        print(embedding_names[0], len(embedding_names))
-
-        object_names = []
-        for uri in obj_table_names:
-            if uri in embedding_names:
-                # Extract object name from URI
-                object_name = uri.split("gs://")[1].split("/", 1)[1]
-                object_names.append(object_name)
+        # object_names = []
+        # for uri in obj_table_rows:
+        #         # Extract object name from URI
+        #         object_name = uri.split("gs://")[1].split("/", 1)[1]
+        #         object_names.append(object_name)
 
         # Push the list of object names to XCom
-        task_instance.xcom_push(key="object_names", value=object_names)
+        # task_instance.xcom_push(key="object_names", value=object_names)
 
     process_uris = PythonOperator(
         task_id="process_uris",
@@ -114,11 +123,12 @@ with DAG(
         python_callable=delete_objs,
     )
 
+    fetch_data >> process_uris
     # Define task dependencies
-    (
-        run_create_embed_query
-        >> get_data_object_table
-        >> get_data_embeddings
-        >> process_uris
-        >> delete_gcs_objects
-    )
+    # (
+    #     run_create_embed_query
+    #     >> get_data_object_table
+    #     >> get_data_embeddings
+    #     >> process_uris
+    #     >> delete_gcs_objects
+    # )
