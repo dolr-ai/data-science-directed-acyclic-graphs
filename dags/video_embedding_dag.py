@@ -4,6 +4,7 @@ from airflow.providers.google.cloud.operators.bigquery import (
     BigQueryGetDataOperator,
 )
 from airflow.operators.python_operator import PythonOperator
+from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.utils.dates import days_ago
 from datetime import datetime, timedelta
 
@@ -24,16 +25,6 @@ FROM ML.GENERATE_EMBEDDING(
     10 AS interval_seconds)
 ));
 """
-
-
-def print_data(**context):
-    rows = context["task_instance"].xcom_pull(task_ids="get_data_from_bq")
-    cnt = 0
-    for row in rows:
-        print(row)
-        cnt += 1
-        if cnt > 100:
-            break
 
 
 with DAG(
@@ -57,19 +48,55 @@ with DAG(
 
     get_data = BigQueryGetDataOperator(
         task_id="get_data_from_bq",
-        dataset_id="hot-or-not-feed-intelligence.test_yral_video",
-        table_id="hot-or-not-feed-intelligence.test_yral_video.video_embeddings",
+        dataset_id="test_yral_video",
+        table_id="video_embeddings",
+        table_project_id="hot-or-not-feed-intelligence",
         max_results=500000,
         selected_fields="uri",
     )
 
-    # Task to print the data
-    print_data_task = PythonOperator(
-        task_id="print_data",
+    # Step 2: Process the list to extract object names
+    def extract_object_names(**kwargs):
+        task_instance = kwargs["task_instance"]
+        rows = task_instance.xcom_pull(task_ids="get_data_from_bq")
+
+        object_names = []
+        for row in rows:
+            uri = row[0]
+            # Extract object name from URI
+            object_name = uri.split("gs://")[1].split("/", 1)[1]
+            object_names.append(object_name)
+
+        print(object_names)
+        object_names = ["cat-2.mp4"]
+        print(object_names)
+
+        # Push the list of object names to XCom
+        task_instance.xcom_push(key="object_names", value=object_names)
+
+    process_uris = PythonOperator(
+        task_id="process_uris",
+        python_callable=extract_object_names,
         provide_context=True,
-        python_callable=print_data,
     )
 
-    get_data >> print_data_task
+    def delete_objs(**kwargs):
+        hook = GCSHook()
+        task_instance = kwargs["task_instance"]
+        array_objects = task_instance.xcom_pull(
+            task_ids="process_uris", key="object_names"
+        )
+
+        for arr in array_objects:
+            hook.delete(bucket_name="yral-videos", object_name=arr)
+
+    delete_gcs_objects = PythonOperator(
+        task_id="delete_gcs_obj",
+        provide_context=True,
+        python_callable=delete_objs,
+    )
+
+    # Define task dependencies
+    get_data >> process_uris >> delete_gcs_objects
 
     # run_query
