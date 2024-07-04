@@ -9,7 +9,7 @@ default_args = {
 }
 
 dag = DAG(
-    'temp_bigquery_aggregator',
+    'bigquery_events_aggregator',
     default_args=default_args,
     description='A temporary DAG to run BigQuery aggregation',
     schedule_interval=None,
