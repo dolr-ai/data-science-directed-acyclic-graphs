@@ -17,7 +17,8 @@ default_args = {
 
 # Your SQL query as a string
 create_embed_query = """
-CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.test_yral_video.video_embeddings` AS (SELECT *
+CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.test_yral_video.video_embeddings` AS 
+(SELECT *
 FROM ML.GENERATE_EMBEDDING(
   MODEL `hot-or-not-feed-intelligence.test_yral_video.mm_embed`,
   TABLE `hot-or-not-feed-intelligence.test_yral_video.video_object_table`,
@@ -39,12 +40,12 @@ with DAG(
     #  catchup=False # enable if you don't want historical dag runs to run
 ) as dag:
 
-    # run_query = BigQueryExecuteQueryOperator(
-    #     task_id="run_query",
-    #     sql=create_embed_query,
-    #     use_legacy_sql=False,
-    #     dag=dag,
-    # )
+    run_create_embed_query = BigQueryExecuteQueryOperator(
+        task_id="run_query",
+        sql=create_embed_query,
+        use_legacy_sql=False,
+        dag=dag,
+    )
 
     get_data = BigQueryGetDataOperator(
         task_id="get_data_from_bq",
@@ -66,10 +67,6 @@ with DAG(
             # Extract object name from URI
             object_name = uri.split("gs://")[1].split("/", 1)[1]
             object_names.append(object_name)
-
-        print(object_names)
-        object_names = ["cat-2.mp4"]
-        print(object_names)
 
         # Push the list of object names to XCom
         task_instance.xcom_push(key="object_names", value=object_names)
@@ -97,6 +94,4 @@ with DAG(
     )
 
     # Define task dependencies
-    get_data >> process_uris >> delete_gcs_objects
-
-    # run_query
+    run_create_embed_query >> get_data >> process_uris >> delete_gcs_objects
