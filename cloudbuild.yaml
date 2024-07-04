@@ -3,25 +3,4 @@ options:
 
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  args:
-  - 'composer'
-  - 'environments'
-  - 'storage'
-  - 'dags'
-  - 'delete'
-  - '--environment=data-pipeline-orchestrator'
-  - '--location=us-central1'
-  - '--project=$PROJECT_ID'
-  - '**'
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  args:
-  - 'composer'
-  - 'environments'
-  - 'storage'
-  - 'dags'
-  - 'import'
-  - '--environment=data-pipeline-orchestrator'
-  - '--location=us-central1'
-  - '--project=$PROJECT_ID'
-  - '--source=dags'
+  args: ['composer', 'environments', 'storage', 'dags', 'import', '--environment', 'data-pipeline-orchestrator', '--location', 'us-central1', '--source', './dags/']
