@@ -11,7 +11,7 @@ default_args = {
 }
 
 dag = DAG(
-    'daily_event_count_update',
+    'ds__daily_event_count_update',
     default_args=default_args,
     description='A DAG to update daily event counts in BigQuery',
     schedule_interval='0 0 * * *',
