@@ -1,0 +1,6 @@
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: ['composer', 'environments', 'storage', 'dags', 'import', '--environment', 'data-pipeline-orchestrator', '--location', 'us-central1', '--source', 'dags/']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: ['composer', 'environments', 'run', 'data-pipeline-orchestrator', '--location', 'us-central1', 'list_dags', '--', '--subdir', '/home/airflow/gcs/dags']
