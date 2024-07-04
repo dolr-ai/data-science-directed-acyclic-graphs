@@ -117,6 +117,9 @@ with DAG(
         obj_table_names = [row[0] for row in obj_table_rows]
         embedding_names = set([row[0] for row in embedding_rows])
 
+        print(obj_table_names[0], len(obj_table_names))
+        print(embedding_names[0], len(embedding_names))
+
         object_names = []
         for uri in obj_table_names:
             if uri in embedding_names:
@@ -152,4 +155,10 @@ with DAG(
     )
 
     # Define task dependencies
-    run_create_embed_query >> get_data >> process_uris >> delete_gcs_objects
+    (
+        run_create_embed_query
+        >> get_data_object_table
+        >> get_data_embeddings
+        >> process_uris
+        >> delete_gcs_objects
+    )
