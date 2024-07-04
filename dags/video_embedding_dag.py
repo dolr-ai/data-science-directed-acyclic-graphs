@@ -42,12 +42,12 @@ with DAG(
     #  catchup=False # enable if you don't want historical dag runs to run
 ) as dag:
 
-    run_create_embed_query = BigQueryExecuteQueryOperator(
-        task_id="run_query",
-        sql=create_embed_query,
-        use_legacy_sql=False,
-        dag=dag,
-    )
+    # run_create_embed_query = BigQueryExecuteQueryOperator(
+    #     task_id="run_query",
+    #     sql=create_embed_query,
+    #     use_legacy_sql=False,
+    #     dag=dag,
+    # )
 
     # get_data_object_table = BigQueryGetDataOperator(
     #     task_id="get_data_from_bq_object_table",
@@ -84,7 +84,6 @@ with DAG(
         python_callable=get_data_from_bq,
     )
 
-    # Step 2: Process the list to extract object names
     def extract_object_names(**kwargs):
         task_instance = kwargs["task_instance"]
         obj_table_rows = task_instance.xcom_pull(task_ids="fetch_data_from_bq")
@@ -105,23 +104,23 @@ with DAG(
         provide_context=True,
     )
 
-    def delete_objs(**kwargs):
-        hook = GCSHook()
-        task_instance = kwargs["task_instance"]
-        array_objects = task_instance.xcom_pull(
-            task_ids="process_uris", key="object_names"
-        )
+    # def delete_objs(**kwargs):
+    #     hook = GCSHook()
+    #     task_instance = kwargs["task_instance"]
+    #     array_objects = task_instance.xcom_pull(
+    #         task_ids="process_uris", key="object_names"
+    #     )
 
-        array_objects = list(set(array_objects))
+    #     array_objects = list(set(array_objects))
 
-        for arr in array_objects:
-            hook.delete(bucket_name="yral-videos", object_name=arr)
+    #     for arr in array_objects:
+    #         hook.delete(bucket_name="yral-videos", object_name=arr)
 
-    delete_gcs_objects = PythonOperator(
-        task_id="delete_gcs_obj",
-        provide_context=True,
-        python_callable=delete_objs,
-    )
+    # delete_gcs_objects = PythonOperator(
+    #     task_id="delete_gcs_obj",
+    #     provide_context=True,
+    #     python_callable=delete_objs,
+    # )
 
     fetch_data >> process_uris
     # Define task dependencies
