@@ -84,6 +84,8 @@ with DAG(
             task_ids="process_uris", key="object_names"
         )
 
+        array_objects = list(set(array_objects))
+
         for arr in array_objects:
             hook.delete(bucket_name="yral-videos", object_name=arr)
 
