@@ -17,55 +17,15 @@ default_args = {
 
 # Your SQL query as a string
 create_embed_query = """
-MERGE `hot-or-not-feed-intelligence.test_yral_video.video_embeddings` AS target
-USING
-(SELECT *
+INSERT INTO `hot-or-not-feed-intelligence.test_yral_video.video_embeddings` 
+SELECT
+  *
 FROM ML.GENERATE_EMBEDDING(
   MODEL `hot-or-not-feed-intelligence.test_yral_video.mm_embed`,
   TABLE `hot-or-not-feed-intelligence.test_yral_video.video_object_table`,
-  STRUCT(TRUE AS flatten_json_output,
-    10 AS interval_seconds)
-)) AS source
-on target.uri = source.uri
-WHEN MATCHED THEN
-  UPDATE SET
-    ml_generate_embedding_result = source.ml_generate_embedding_result,
-    ml_generate_embedding_status = source.ml_generate_embedding_status,
-    ml_generate_embedding_start_sec = source.ml_generate_embedding_start_sec,
-    ml_generate_embedding_end_sec = source.ml_generate_embedding_end_sec,
-    generation = source.generation,
-    content_type = source.content_type,
-    size = source.size,
-    md5_hash = source.md5_hash,
-    updated = source.updated,
-    metadata = source.metadata
-WHEN NOT MATCHED THEN
-  INSERT (
-    ml_generate_embedding_result,
-    ml_generate_embedding_status,
-    ml_generate_embedding_start_sec,
-    ml_generate_embedding_end_sec,
-    uri,
-    generation,
-    content_type,
-    size,
-    md5_hash,
-    updated,
-    metadata
-  )
-  VALUES (
-    source.ml_generate_embedding_result,
-    source.ml_generate_embedding_status,
-    source.ml_generate_embedding_start_sec,
-    source.ml_generate_embedding_end_sec,
-    source.uri,
-    source.generation,
-    source.content_type,
-    source.size,
-    source.md5_hash,
-    source.updated,
-    source.metadata
-  );
+  STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
+)
+WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_embeddings`);
 """
 
 
