@@ -68,11 +68,11 @@ with DAG(
     # )
 
     def get_data_from_bq(**kwargs):
-        hook = BigQueryHook()
+        hook = BigQueryHook(use_legacy_sql=False)
         conn = hook.get_conn()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_embeddings`);"
+            "SELECT DISTINCT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_embeddings`);"
         )
         result = cursor.fetchall()
         print("result", result)
