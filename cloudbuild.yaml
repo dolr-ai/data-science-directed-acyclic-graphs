@@ -2,8 +2,5 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-- name: 'gcr.io/cloud-builders/gsutil'
-  args: ['-m', 'rm', '-r', 'gs://${_BUCKET_NAME}/dags/*']
-
-- name: 'gcr.io/cloud-builders/gsutil'
-  args: ['-m', 'cp', '-r', './dags', 'gs://${_BUCKET_NAME}/']
+- name: 'gcr.io/cloud-builders/gcloud'  
+  args: ['composer', 'environments', 'storage', 'dags', 'import', '--environment', 'data-pipeline-orchestrator', '--location', 'us-central1', '--source', './dags/']  
