@@ -18,15 +18,15 @@ default_args = {
 
 # Your SQL query as a string
 create_embed_query = """
-INSERT INTO `hot-or-not-feed-intelligence.test_yral_video.video_embeddings` 
+INSERT INTO `hot-or-not-feed-intelligence.yral_ds.video_embeddings` 
 SELECT
   *
 FROM ML.GENERATE_EMBEDDING(
-  MODEL `hot-or-not-feed-intelligence.test_yral_video.mm_embed`,
-  TABLE `hot-or-not-feed-intelligence.test_yral_video.video_object_table`,
+  MODEL `hot-or-not-feed-intelligence.yral_ds.mm_embed`,
+  TABLE `hot-or-not-feed-intelligence.yral_ds.video_object_table`,
   STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
 )
-WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_embeddings`);
+WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`);
 """
 
 
@@ -54,7 +54,7 @@ with DAG(
         conn = hook.get_conn()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT DISTINCT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.test_yral_video.video_embeddings`);"
+            "SELECT DISTINCT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`);"
         )
         result = cursor.fetchall()
         return result
