@@ -95,14 +95,13 @@ with DAG(
         array_objects = list(set(array_objects))
 
         for arr in array_objects:
-            print("here it is ", arr)
-            # hook.copy(
-            #     source_bucket="yral-videos",
-            #     source_object=arr,
-            #     destination_bucket="yral-videos-backup",
-            #     destination_object=arr,
-            # )
-            # hook.delete(bucket_name="yral-videos", object_name=arr)
+            hook.copy(
+                source_bucket="yral-videos",
+                source_object=arr,
+                destination_bucket="yral-videos-backup",
+                destination_object=arr,
+            )
+            hook.delete(bucket_name="yral-videos", object_name=arr)
 
     transfer_and_delete_gcs_objects = PythonOperator(
         task_id="delete_gcs_obj",
