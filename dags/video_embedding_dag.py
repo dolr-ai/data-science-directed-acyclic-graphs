@@ -23,7 +23,7 @@ SELECT
   *
 FROM ML.GENERATE_EMBEDDING(
   MODEL `hot-or-not-feed-intelligence.yral_ds.mm_embed`,
-  TABLE `hot-or-not-feed-intelligence.yral_ds.video_object_table`,
+  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` LIMIT 2),
   STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
 )
 WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`);
@@ -85,7 +85,7 @@ with DAG(
         provide_context=True,
     )
 
-    def delete_objs(**kwargs):
+    def transfer_and_delete_objs(**kwargs):
         hook = GCSHook()
         task_instance = kwargs["task_instance"]
         array_objects = task_instance.xcom_pull(
@@ -95,13 +95,25 @@ with DAG(
         array_objects = list(set(array_objects))
 
         for arr in array_objects:
-            hook.delete(bucket_name="yral-videos", object_name=arr)
+            print("here it is ", arr)
+            # hook.copy(
+            #     source_bucket="yral-videos",
+            #     source_object=arr,
+            #     destination_bucket="yral-videos-backup",
+            #     destination_object=arr,
+            # )
+            # hook.delete(bucket_name="yral-videos", object_name=arr)
 
-    delete_gcs_objects = PythonOperator(
+    transfer_and_delete_gcs_objects = PythonOperator(
         task_id="delete_gcs_obj",
         provide_context=True,
-        python_callable=delete_objs,
+        python_callable=transfer_and_delete_objs,
     )
 
     # Define task dependencies
-    (run_create_embed_query >> fetch_data >> process_uris >> delete_gcs_objects)
+    (
+        run_create_embed_query
+        >> fetch_data
+        >> process_uris
+        >> transfer_and_delete_gcs_objects
+    )
