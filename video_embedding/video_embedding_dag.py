@@ -33,7 +33,7 @@ with DAG(
     "video_embed_pipeline_dag",
     default_args=default_args,
     description="DAG for video embedding pipeline. Runs every hour",
-    schedule_interval="0 * * * *",
+    # schedule_interval="0 * * * *",
     max_active_runs=1,  # Ensures only one active run at a time
     max_active_tasks=1,
     start_date=days_ago(1),
