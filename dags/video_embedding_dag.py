@@ -23,10 +23,9 @@ SELECT
   *
 FROM ML.GENERATE_EMBEDDING(
   MODEL `hot-or-not-feed-intelligence.yral_ds.mm_embed`,
-  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` LIMIT 1000),
+  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`) LIMIT 1000),
   STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
-)
-WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`);
+);
 """
 
 
@@ -49,70 +48,70 @@ with DAG(
         dag=dag,
     )
 
-    def get_data_from_bq(**kwargs):
-        hook = BigQueryHook(use_legacy_sql=False)
-        conn = hook.get_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT DISTINCT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`);"
-        )
-        result = cursor.fetchall()
-        return result
+    # def get_data_from_bq(**kwargs):
+    #     hook = BigQueryHook(use_legacy_sql=False)
+    #     conn = hook.get_conn()
+    #     cursor = conn.cursor()
+    #     cursor.execute(
+    #         "SELECT DISTINCT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`);"
+    #     )
+    #     result = cursor.fetchall()
+    #     return result
 
-    fetch_data = PythonOperator(
-        task_id="fetch_data_from_bq",
-        provide_context=True,
-        python_callable=get_data_from_bq,
-    )
+    # fetch_data = PythonOperator(
+    #     task_id="fetch_data_from_bq",
+    #     provide_context=True,
+    #     python_callable=get_data_from_bq,
+    # )
 
-    def extract_object_names(**kwargs):
-        task_instance = kwargs["task_instance"]
-        obj_table_rows = task_instance.xcom_pull(task_ids="fetch_data_from_bq")
-        # print("obj_table_rows", obj_table_rows)
+    # def extract_object_names(**kwargs):
+    #     task_instance = kwargs["task_instance"]
+    #     obj_table_rows = task_instance.xcom_pull(task_ids="fetch_data_from_bq")
+    #     # print("obj_table_rows", obj_table_rows)
 
-        object_names = []
-        for obj in obj_table_rows:
-            uri = obj[0]
-            object_name = uri.split("gs://")[1].split("/", 1)[1]
-            object_names.append(object_name)
+    #     object_names = []
+    #     for obj in obj_table_rows:
+    #         uri = obj[0]
+    #         object_name = uri.split("gs://")[1].split("/", 1)[1]
+    #         object_names.append(object_name)
 
-        # Push the list of object names to XCom
-        task_instance.xcom_push(key="object_names", value=object_names)
+    #     # Push the list of object names to XCom
+    #     task_instance.xcom_push(key="object_names", value=object_names)
 
-    process_uris = PythonOperator(
-        task_id="process_uris",
-        python_callable=extract_object_names,
-        provide_context=True,
-    )
+    # process_uris = PythonOperator(
+    #     task_id="process_uris",
+    #     python_callable=extract_object_names,
+    #     provide_context=True,
+    # )
 
-    def transfer_and_delete_objs(**kwargs):
-        hook = GCSHook()
-        task_instance = kwargs["task_instance"]
-        array_objects = task_instance.xcom_pull(
-            task_ids="process_uris", key="object_names"
-        )
+    # def transfer_and_delete_objs(**kwargs):
+    #     hook = GCSHook()
+    #     task_instance = kwargs["task_instance"]
+    #     array_objects = task_instance.xcom_pull(
+    #         task_ids="process_uris", key="object_names"
+    #     )
 
-        array_objects = list(set(array_objects))
+    #     array_objects = list(set(array_objects))
 
-        for arr in array_objects:
-            hook.copy(
-                source_bucket="yral-videos",
-                source_object=arr,
-                destination_bucket="yral-videos-backup",
-                destination_object=arr,
-            )
-            hook.delete(bucket_name="yral-videos", object_name=arr)
+    #     for arr in array_objects:
+    #         # hook.copy(
+    #         #     source_bucket="yral-videos",
+    #         #     source_object=arr,
+    #         #     destination_bucket="yral-videos-backup",
+    #         #     destination_object=arr,
+    #         # )
+    #         hook.delete(bucket_name="yral-videos", object_name=arr)
 
-    transfer_and_delete_gcs_objects = PythonOperator(
-        task_id="delete_gcs_obj",
-        provide_context=True,
-        python_callable=transfer_and_delete_objs,
-    )
+    # transfer_and_delete_gcs_objects = PythonOperator(
+    #     task_id="delete_gcs_obj",
+    #     provide_context=True,
+    #     python_callable=transfer_and_delete_objs,
+    # )
 
     # Define task dependencies
     (
         run_create_embed_query
-        >> fetch_data
-        >> process_uris
-        >> transfer_and_delete_gcs_objects
+        # >> fetch_data
+        # >> process_uris
+        # >> transfer_and_delete_gcs_objects
     )
