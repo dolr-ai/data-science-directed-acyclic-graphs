@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 default_args = {
     "owner": "airflow",
     "start_date": days_ago(1),
-    "retries": 1,
+    "retries": 0,
     "depends_on_past": True,
 }
 
