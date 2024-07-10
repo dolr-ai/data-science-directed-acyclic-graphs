@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 
 default_args = {
     "owner": "airflow",
-    "start_date": days_ago(1),
     "retries": 0,
     "depends_on_past": True,
 }
@@ -34,9 +33,11 @@ with DAG(
     "video_embed_pipeline_dag",
     default_args=default_args,
     description="DAG for video embedding pipeline. Runs every hour",
-    schedule_interval="@hourly",
+    schedule_interval="0 * * * *",
     max_active_runs=1,  # Ensures only one active run at a time
     max_active_tasks=1,
+    start_date=days_ago(1),
+    catchup=False,
 ) as dag:
 
     run_create_embed_query = BigQueryExecuteQueryOperator(
