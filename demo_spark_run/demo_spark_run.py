@@ -28,9 +28,8 @@ def upload_pyspark_file(**kwargs):
     
     staging_bucket = kwargs['ti'].xcom_pull(task_ids='get_cluster_config')
     
-    with open('./demo_pyspark_script.py', 'r') as file:
+    with open(os.path.join(os.path.dirname(__file__), 'demo_pyspark_script.py'), 'r') as file:
         pyspark_code = file.read()
-    
     # Upload the script to the staging bucket
     storage_client = storage.Client()
     bucket = storage_client.bucket(staging_bucket)
