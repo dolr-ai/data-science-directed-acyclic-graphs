@@ -5,7 +5,7 @@ from airflow.utils.dates import days_ago
 import os
 from google.cloud import dataproc_v1
 
-DAG_ID = 'dataproc_pyspark_job'
+DAG_ID = 'dataproc_pyspark_job_demo'
 CLUSTER_NAME = 'yral-ds-dataproc-ce'
 PROJECT_ID = 'hot-or-not-feed-intelligence'  
 REGION = 'us-central1'
@@ -28,14 +28,8 @@ def upload_pyspark_file(**kwargs):
     
     staging_bucket = kwargs['ti'].xcom_pull(task_ids='get_cluster_config')
     
-    pyspark_code = """
-    from pyspark.sql import SparkSession
-    spark = SparkSession.builder.appName("HelloWorldPySpark").getOrCreate()
-    df = spark.createDataFrame([("Hello",), ("World",)], ["message"])
-    df.show()
-    spark.stop()
-    """
-    
+    with open(os.path.join(os.path.dirname(__file__), 'demo_pyspark_script.py'), 'r') as file:
+        pyspark_code = file.read()
     # Upload the script to the staging bucket
     storage_client = storage.Client()
     bucket = storage_client.bucket(staging_bucket)
