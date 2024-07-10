@@ -33,12 +33,8 @@ with DAG(
     "video_embed_pipeline_dag",
     start_date=datetime(2024, 1, 1),
     default_args=default_args,
-    description="A temporary DAG to test video embedding pipeline",
-    schedule_interval=None,
-    #  max_active_runs=1,
-    #  schedule_interval='0 12 8-14,22-28 * 6',  # https://airflow.apache.org/docs/stable/scheduler.html#dag-runs
-    #  default_args=default_args,
-    #  catchup=False # enable if you don't want historical dag runs to run
+    description="DAG for video embedding pipeline. Runs every hour",
+    schedule_interval="@hourly",
 ) as dag:
 
     run_create_embed_query = BigQueryExecuteQueryOperator(
