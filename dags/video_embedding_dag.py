@@ -23,7 +23,7 @@ SELECT
   *
 FROM ML.GENERATE_EMBEDDING(
   MODEL `hot-or-not-feed-intelligence.yral_ds.mm_embed`,
-  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`) LIMIT 5000),
+  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`) LIMIT 10000),
   STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
 );
 """
