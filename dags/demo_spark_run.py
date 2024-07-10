@@ -28,13 +28,8 @@ def upload_pyspark_file(**kwargs):
     
     staging_bucket = kwargs['ti'].xcom_pull(task_ids='get_cluster_config')
     
-    pyspark_code = """
-    from pyspark.sql import SparkSession
-    spark = SparkSession.builder.appName("HelloWorldPySpark").getOrCreate()
-    df = spark.createDataFrame([("Hello",), ("World",)], ["message"])
-    df.show()
-    spark.stop()
-    """
+    with open('dags/pyspark_scripts/demo_pyspark_script.py', 'r') as file:
+        pyspark_code = file.read()
     
     # Upload the script to the staging bucket
     storage_client = storage.Client()
