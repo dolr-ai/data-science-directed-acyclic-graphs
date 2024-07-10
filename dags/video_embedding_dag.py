@@ -13,6 +13,7 @@ default_args = {
     "owner": "airflow",
     "start_date": days_ago(1),
     "retries": 1,
+    "depends_on_past": True,
 }
 
 
@@ -35,6 +36,8 @@ with DAG(
     default_args=default_args,
     description="DAG for video embedding pipeline. Runs every hour",
     schedule_interval="@hourly",
+    max_active_runs=1,  # Ensures only one active run at a time
+    max_active_tasks=1,
 ) as dag:
 
     run_create_embed_query = BigQueryExecuteQueryOperator(
