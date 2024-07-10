@@ -31,4 +31,4 @@ jobs:
         gcloud composer environments storage dags import \
           --environment data-pipeline-orchestrator \
           --location us-central1 \
-          --source ./dags/
+          --source /
