@@ -28,7 +28,7 @@ def upload_pyspark_file(**kwargs):
     
     staging_bucket = kwargs['ti'].xcom_pull(task_ids='get_cluster_config')
     
-    with open('dags/pyspark_scripts/demo_pyspark_script.py', 'r') as file:
+    with open('./demo_pyspark_script.py', 'r') as file:
         pyspark_code = file.read()
     
     # Upload the script to the staging bucket
