@@ -31,4 +31,12 @@ jobs:
         gcloud composer environments storage dags import \
           --environment data-pipeline-orchestrator \
           --location us-central1 \
-          --source /
+          --source ./demo_spark_run/
+        gcloud composer environments storage dags import \
+          --environment data-pipeline-orchestrator \
+          --location us-central1 \
+          --source ./event_count_update/
+        gcloud composer environments storage dags import \
+          --environment data-pipeline-orchestrator \
+          --location us-central1 \
+          --source ./video_embedding/
