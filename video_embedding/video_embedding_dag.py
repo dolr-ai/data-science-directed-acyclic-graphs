@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 default_args = {
     "owner": "airflow",
     "retries": 0,
-    "depends_on_past": True,
+    # "depends_on_past": True,
 }
 
 
@@ -23,7 +23,7 @@ SELECT
   *
 FROM ML.GENERATE_EMBEDDING(
   MODEL `hot-or-not-feed-intelligence.yral_ds.mm_embed`,
-  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`) LIMIT 10000),
+  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`) LIMIT 5),
   STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
 );
 """
@@ -35,33 +35,28 @@ with DAG(
     description="DAG for video embedding pipeline. Runs every hour",
     # schedule_interval="0 * * * *",
     max_active_runs=1,  # Ensures only one active run at a time
-    max_active_tasks=1,
     start_date=days_ago(1),
     catchup=False,
 ) as dag:
 
-    run_create_embed_query = BigQueryExecuteQueryOperator(
-        task_id="run_query",
-        sql=create_embed_query,
-        use_legacy_sql=False,
-        dag=dag,
-    )
-
-    # def get_data_from_bq(**kwargs):
-    #     hook = BigQueryHook(use_legacy_sql=False)
-    #     conn = hook.get_conn()
-    #     cursor = conn.cursor()
-    #     cursor.execute(
-    #         "SELECT DISTINCT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`);"
-    #     )
-    #     result = cursor.fetchall()
-    #     return result
-
-    # fetch_data = PythonOperator(
-    #     task_id="fetch_data_from_bq",
-    #     provide_context=True,
-    #     python_callable=get_data_from_bq,
+    # run_create_embed_query = BigQueryExecuteQueryOperator(
+    #     task_id="run_query",
+    #     sql=create_embed_query,
+    #     use_legacy_sql=False,
+    #     dag=dag,
     # )
+
+    def run_create_embed_query(**kwargs):
+        hook = BigQueryHook(use_legacy_sql=False)
+        conn = hook.get_conn()
+        cursor = conn.cursor()
+        cursor.execute(create_embed_query)
+
+    run_query = PythonOperator(
+        task_id="run_create_embed_query",
+        provide_context=True,
+        python_callable=run_create_embed_query,
+    )
 
     # def extract_object_names(**kwargs):
     #     task_instance = kwargs["task_instance"]
@@ -109,7 +104,7 @@ with DAG(
 
     # Define task dependencies
     (
-        run_create_embed_query
+        run_query
         # >> fetch_data
         # >> process_uris
         # >> transfer_and_delete_gcs_objects
