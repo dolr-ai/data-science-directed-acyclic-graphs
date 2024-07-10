@@ -5,7 +5,7 @@ from airflow.utils.dates import days_ago
 import os
 from google.cloud import dataproc_v1
 
-DAG_ID = 'dataproc_pyspark_job'
+DAG_ID = 'dataproc_pyspark_job_demo'
 CLUSTER_NAME = 'yral-ds-dataproc-ce'
 PROJECT_ID = 'hot-or-not-feed-intelligence'  
 REGION = 'us-central1'
