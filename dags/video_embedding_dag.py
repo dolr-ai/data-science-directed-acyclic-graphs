@@ -32,7 +32,6 @@ FROM ML.GENERATE_EMBEDDING(
 
 with DAG(
     "video_embed_pipeline_dag",
-    start_date=datetime(2024, 1, 1),
     default_args=default_args,
     description="DAG for video embedding pipeline. Runs every hour",
     schedule_interval="@hourly",
