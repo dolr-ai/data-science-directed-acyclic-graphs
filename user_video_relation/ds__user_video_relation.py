@@ -8,7 +8,7 @@ def check_table_exists():
     client = bigquery.Client()
     query = """
     SELECT COUNT(*)
-    FROM `project.dataset.INFORMATION_SCHEMA.TABLES`
+    FROM `hot-or-not-feed-intelligence.analytics_views.INFORMATION_SCHEMA.TABLES`
     WHERE table_name = 'userVideoRelation'
     """
     query_job = client.query(query)
@@ -20,7 +20,7 @@ def get_last_timestamp():
     client = bigquery.Client()
     query = """
     SELECT MAX(timestamp) as last_timestamp
-    FROM `project.dataset.userVideoRelation`
+    FROM `hot-or-not-feed-intelligence.analytics_views.userVideoRelation`
     """
     query_job = client.query(query)
     results = query_job.result()
@@ -29,11 +29,13 @@ def get_last_timestamp():
 
 def create_initial_query():
     return """
+    CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.analytics_views.userVideoRelation` AS
     SELECT 
       JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
       JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
       AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched,
-      COUNT(*) AS total_count
+      COUNT(*) AS total_count,
+      MAX(timestamp) AS last_timestamp
     FROM 
       analytics_335143420.test_events_analytics
     WHERE 
@@ -46,19 +48,32 @@ def create_initial_query():
 
 def create_incremental_query(last_timestamp):
     return f"""
-    SELECT 
-      JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
-      JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
-      AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched,
-      COUNT(*) AS total_count
-    FROM 
-      analytics_335143420.test_events_analytics
-    WHERE 
-      event = 'video_duration_watched' AND timestamp > '{last_timestamp}'
-    GROUP BY 
-      user_id, video_id
-    HAVING 
-     user_id IS NOT NULL AND video_id IS NOT NULL AND mean_percentage_watched IS NOT NULL
+    MERGE `hot-or-not-feed-intelligence.analytics_views.userVideoRelation` T
+    USING (
+      SELECT 
+        JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+        JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+        AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched,
+        COUNT(*) AS total_count,
+        MAX(timestamp) AS last_timestamp
+      FROM 
+        analytics_335143420.test_events_analytics
+      WHERE 
+        event = 'video_duration_watched' AND timestamp > '{last_timestamp}'
+      GROUP BY 
+        user_id, video_id
+      HAVING 
+       user_id IS NOT NULL AND video_id IS NOT NULL AND mean_percentage_watched IS NOT NULL
+    ) S
+    ON T.user_id = S.user_id AND T.video_id = S.video_id
+    WHEN MATCHED THEN
+      UPDATE SET 
+        T.mean_percentage_watched = S.mean_percentage_watched,
+        T.total_count = S.total_count,
+        T.last_timestamp = S.last_timestamp
+    WHEN NOT MATCHED THEN
+      INSERT (user_id, video_id, mean_percentage_watched, total_count, last_timestamp)
+      VALUES (S.user_id, S.video_id, S.mean_percentage_watched, S.total_count, S.last_timestamp)
     """
 
 def run_query():
