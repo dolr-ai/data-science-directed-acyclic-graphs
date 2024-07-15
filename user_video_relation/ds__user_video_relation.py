@@ -19,7 +19,7 @@ def check_table_exists():
 def get_last_timestamp():
     client = bigquery.Client()
     query = """
-    SELECT MAX(timestamp) as last_timestamp
+    SELECT MAX(last_timestamp) as last_timestamp
     FROM `hot-or-not-feed-intelligence.analytics_views.userVideoRelation`
     """
     query_job = client.query(query)
