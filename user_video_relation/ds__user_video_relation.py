@@ -45,7 +45,6 @@ def create_initial_query():
     HAVING 
      user_id IS NOT NULL AND video_id IS NOT NULL AND mean_percentage_watched IS NOT NULL
     """
-
 def create_incremental_query(last_timestamp):
     return f"""
     MERGE `hot-or-not-feed-intelligence.analytics_views.userVideoRelation` T
@@ -68,8 +67,8 @@ def create_incremental_query(last_timestamp):
     ON T.user_id = S.user_id AND T.video_id = S.video_id
     WHEN MATCHED THEN
       UPDATE SET 
-        T.mean_percentage_watched = S.mean_percentage_watched,
-        T.total_count = S.total_count,
+        T.mean_percentage_watched = (T.mean_percentage_watched * T.total_count + S.mean_percentage_watched * S.total_count) / (T.total_count + S.total_count),
+        T.total_count = T.total_count + S.total_count,
         T.last_timestamp = S.last_timestamp
     WHEN NOT MATCHED THEN
       INSERT (user_id, video_id, mean_percentage_watched, total_count, last_timestamp)
