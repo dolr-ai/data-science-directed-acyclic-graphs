@@ -17,7 +17,7 @@ def check_table_exists():
         return row[0] > 0
 
 def get_last_timestamp():
-    client = bigquery.Client(credentials=credentials, project=cfg.get('project'))
+    client = bigquery.Client()
     query = """
     SELECT MAX(last_watched_timestamp) as last_watched_timestamp
     FROM `hot-or-not-feed-intelligence.analytics_views.userVideoRelation`
