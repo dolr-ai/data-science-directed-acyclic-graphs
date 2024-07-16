@@ -131,7 +131,7 @@ def create_incremental_query(last_timestamp):
       INSERT (user_id, video_id, last_watched_timestamp, mean_percentage_watched, last_liked_timestamp, liked)
       VALUES (S.user_id, S.video_id, S.last_watched_timestamp, S.mean_percentage_watched, S.last_liked_timestamp, S.liked)
     """
-bq_client.execute_query(create_incremental_query(res))
+
 def run_query():
     if check_table_exists():
         last_timestamp = get_last_timestamp()
