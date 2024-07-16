@@ -17,64 +17,121 @@ def check_table_exists():
         return row[0] > 0
 
 def get_last_timestamp():
-    client = bigquery.Client()
+    client = bigquery.Client(credentials=credentials, project=cfg.get('project'))
     query = """
-    SELECT MAX(last_timestamp) as last_timestamp
+    SELECT MAX(last_watched_timestamp) as last_watched_timestamp
     FROM `hot-or-not-feed-intelligence.analytics_views.userVideoRelation`
     """
     query_job = client.query(query)
     results = query_job.result()
     for row in results:
-        return row['last_timestamp']
+        return row['last_watched_timestamp']
 
 def create_initial_query():
     return """
     CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.analytics_views.userVideoRelation` AS
+    WITH video_watched AS (
+      SELECT 
+        JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+        JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+        max(timestamp) as last_watched_timestamp,
+        AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched
+      FROM 
+        analytics_335143420.test_events_analytics
+      WHERE 
+        event = 'video_duration_watched'
+      GROUP BY 
+        user_id, video_id
+    ),
+    video_liked AS (
+      SELECT 
+        JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+        JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+        max(timestamp) as last_liked_timestamp,
+        TRUE AS liked
+      FROM 
+        analytics_335143420.test_events_analytics
+      WHERE 
+        event = 'like_video'
+      GROUP BY 
+        user_id, video_id
+    )
     SELECT 
-      JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
-      JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
-      AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched,
-      COUNT(*) AS total_count,
-      MAX(timestamp) AS last_timestamp
+      vw.user_id,
+      vw.video_id,
+      vw.last_watched_timestamp,
+      vw.mean_percentage_watched,
+      vl.last_liked_timestamp,
+      COALESCE(vl.liked, FALSE) AS liked
     FROM 
-      analytics_335143420.test_events_analytics
-    WHERE 
-      event = 'video_duration_watched'
-    GROUP BY 
-      user_id, video_id
-    HAVING 
-     user_id IS NOT NULL AND video_id IS NOT NULL AND mean_percentage_watched IS NOT NULL
+      video_watched vw
+    LEFT JOIN 
+      video_liked vl
+    ON 
+      vw.user_id = vl.user_id AND vw.video_id = vl.video_id
+    order by last_watched_timestamp desc;
     """
+
 def create_incremental_query(last_timestamp):
     return f"""
     MERGE `hot-or-not-feed-intelligence.analytics_views.userVideoRelation` T
     USING (
+      WITH video_watched AS (
+        SELECT 
+          JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+          JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+          max(timestamp) as last_watched_timestamp,
+          AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched
+        FROM 
+          analytics_335143420.test_events_analytics
+        WHERE 
+          event = 'video_duration_watched'
+          and timestamp > '{last_timestamp}'
+        GROUP BY
+          user_id, video_id
+      ),
+      video_liked AS (
+        SELECT 
+          JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+          JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+          max(timestamp) as last_liked_timestamp,
+          TRUE AS liked
+        FROM 
+          analytics_335143420.test_events_analytics
+        WHERE 
+          event = 'like_video'
+          and timestamp > '{last_timestamp}'
+        GROUP BY 
+          user_id, video_id
+      )
       SELECT 
-        JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
-        JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
-        AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched,
-        COUNT(*) AS total_count,
-        MAX(timestamp) AS last_timestamp
+        vw.user_id,
+        vw.video_id,
+        vw.last_watched_timestamp,
+        vw.mean_percentage_watched,
+        vl.last_liked_timestamp,
+        COALESCE(vl.liked, FALSE) AS liked
       FROM 
-        analytics_335143420.test_events_analytics
-      WHERE 
-        event = 'video_duration_watched' AND timestamp > '{last_timestamp}'
-      GROUP BY 
-        user_id, video_id
-      HAVING 
-       user_id IS NOT NULL AND video_id IS NOT NULL AND mean_percentage_watched IS NOT NULL
+        video_watched vw
+      LEFT JOIN 
+        video_liked vl
+      ON 
+        vw.user_id = vl.user_id AND vw.video_id = vl.video_id
+      ORDER BY 
+        vw.last_watched_timestamp DESC
     ) S
     ON T.user_id = S.user_id AND T.video_id = S.video_id
     WHEN MATCHED THEN
       UPDATE SET 
-        T.mean_percentage_watched = (T.mean_percentage_watched * T.total_count + S.mean_percentage_watched * S.total_count) / (T.total_count + S.total_count),
-        T.total_count = T.total_count + S.total_count,
-        T.last_timestamp = S.last_timestamp
+        T.mean_percentage_watched = S.mean_percentage_watched,
+        T.last_watched_timestamp = S.last_watched_timestamp,
+        T.last_liked_timestamp = S.last_liked_timestamp,
+        T.liked = T.liked OR S.liked
     WHEN NOT MATCHED THEN
-      INSERT (user_id, video_id, mean_percentage_watched, total_count, last_timestamp)
-      VALUES (S.user_id, S.video_id, S.mean_percentage_watched, S.total_count, S.last_timestamp)
+      INSERT (user_id, video_id, last_watched_timestamp, mean_percentage_watched, last_liked_timestamp, liked)
+      VALUES (S.user_id, S.video_id, S.last_watched_timestamp, S.mean_percentage_watched, S.last_liked_timestamp, S.liked)
     """
-
+bq_client.execute_query(create_incremental_query(res))
 def run_query():
     if check_table_exists():
         last_timestamp = get_last_timestamp()
