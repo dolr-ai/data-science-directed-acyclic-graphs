@@ -8,7 +8,7 @@ def check_table_exists():
     client = bigquery.Client()
     query = """
     SELECT COUNT(*)
-    FROM `hot-or-not-feed-intelligence.analytics_views.INFORMATION_SCHEMA.TABLES`
+    FROM `hot-or-not-feed-intelligence.yral_ds.INFORMATION_SCHEMA.TABLES`
     WHERE table_name = 'userVideoRelation'
     """
     query_job = client.query(query)
@@ -20,7 +20,7 @@ def get_last_timestamp():
     client = bigquery.Client()
     query = """
     SELECT MAX(last_watched_timestamp) as last_watched_timestamp
-    FROM `hot-or-not-feed-intelligence.analytics_views.userVideoRelation`
+    FROM `hot-or-not-feed-intelligence.yral_ds.userVideoRelation`
     """
     query_job = client.query(query)
     results = query_job.result()
@@ -29,7 +29,7 @@ def get_last_timestamp():
 
 def create_initial_query():
     return """
-    CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.analytics_views.userVideoRelation` AS
+    CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.userVideoRelation` AS
     WITH video_watched AS (
       SELECT 
         JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
@@ -37,7 +37,7 @@ def create_initial_query():
         max(timestamp) as last_watched_timestamp,
         AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched
       FROM 
-        analytics_335143420.test_events_analytics
+        analytics_335143420.test_events_analytics -- base analytics table -- change this if the table name changes
       WHERE 
         event = 'video_duration_watched'
       GROUP BY 
@@ -74,7 +74,7 @@ def create_initial_query():
 
 def create_incremental_query(last_timestamp):
     return f"""
-    MERGE `hot-or-not-feed-intelligence.analytics_views.userVideoRelation` T
+    MERGE `hot-or-not-feed-intelligence.yral_ds.userVideoRelation` T
     USING (
       WITH video_watched AS (
         SELECT 
