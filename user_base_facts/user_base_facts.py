@@ -125,7 +125,7 @@ def updaet_or_init_ubf_table():
 
 default_args = {
     'owner': 'airflow',
-    'start_date': datetime(2024,18, 1),
+    'start_date': datetime(2024,7, 1),
     'retries': 1,
 }
 
