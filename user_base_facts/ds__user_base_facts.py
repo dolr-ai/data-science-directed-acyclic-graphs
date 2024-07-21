@@ -1,4 +1,5 @@
 from airflow import DAG
+from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
 from datetime import datetime
@@ -125,11 +126,11 @@ def updaet_or_init_ubf_table():
 
 default_args = {
     'owner': 'airflow',
-    'start_date': datetime(2024,7, 1),
+    'start_date': days_ago(1),
     'retries': 1,
 }
 
-with DAG('user_base_facts', default_args=default_args, schedule_interval='0 0 * * *') as dag:
+with DAG('user_base_facts', default_args=default_args, schedule_interval='0 0 * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
         python_callable=updaet_or_init_ubf_table

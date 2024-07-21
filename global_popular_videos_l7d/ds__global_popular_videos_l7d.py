@@ -8,7 +8,7 @@ from google.cloud import bigquery
 
 default_args = {
     'owner': 'airflow',
-    'start_date': datetime(2024,7, 1),
+    'start_date': days_ago(1),
     'retries': 1,
 }
 

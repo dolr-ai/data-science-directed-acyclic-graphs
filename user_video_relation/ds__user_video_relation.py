@@ -1,4 +1,5 @@
 from airflow import DAG
+from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
 from datetime import datetime
@@ -145,11 +146,11 @@ def run_query():
 
 default_args = {
     'owner': 'airflow',
-    'start_date': datetime(2023, 10, 1),
+    'start_date': days_ago(1),
     'retries': 1,
 }
 
-with DAG('user_video_interaction_dag', default_args=default_args, schedule_interval='*/15 * * * *') as dag:
+with DAG('user_video_interaction_dag', default_args=default_args, schedule_interval='*/15 * * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
         python_callable=run_query
