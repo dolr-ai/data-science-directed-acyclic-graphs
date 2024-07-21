@@ -1,6 +1,5 @@
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
-from airflow.operators.bigquery_operator import BigQueryOperator
 from airflow.utils.dates import days_ago
 from datetime import timedelta
 from datetime import datetime
