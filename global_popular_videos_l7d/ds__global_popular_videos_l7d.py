@@ -55,7 +55,7 @@ def create_global_popular_videos_l7d():
     query_job = client.query(query)
     query_job.result()
 
-with DAG('global_popular_videos_l7d', default_args=default_args, schedule_interval='10 0 * * *') as dag:
+with DAG('global_popular_videos_l7d', default_args=default_args, schedule_interval='10 0 * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
         python_callable=create_global_popular_videos_l7d
