@@ -8,6 +8,7 @@ from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.contrib.hooks.bigquery_hook import BigQueryHook
 from airflow.utils.dates import days_ago
 from datetime import datetime, timedelta
+import requests
 
 default_args = {
     "owner": "airflow",
@@ -15,6 +16,13 @@ default_args = {
     # "depends_on_past": True,
 }
 
+
+def send_alert_to_google_chat():
+    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
+    message = {
+        "text": f"DAG global_popular_videos_l90d failed."
+    }
+    requests.post(webhook_url, json=message)
 
 # Your SQL query as a string
 create_embed_query = """
@@ -56,6 +64,7 @@ with DAG(
         task_id="run_create_embed_query",
         provide_context=True,
         python_callable=run_create_embed_query,
+        on_failure_callback=send_alert_to_google_chat
     )
 
     # def extract_object_names(**kwargs):

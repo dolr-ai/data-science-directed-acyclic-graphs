@@ -4,7 +4,7 @@ from airflow.utils.dates import days_ago
 from datetime import timedelta
 from datetime import datetime
 from google.cloud import bigquery
-
+import requests
 
 default_args = {
     'owner': 'airflow',
@@ -12,6 +12,12 @@ default_args = {
     'retries': 1,
 }
 
+def send_alert_to_google_chat():
+    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
+    message = {
+        "text": f"DAG global_popular_videos_l90d failed."
+    }
+    requests.post(webhook_url, json=message)
 
 query = """
 CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.global_popular_videos_l90d` AS
@@ -58,5 +64,6 @@ def create_global_popular_videos_l90d():
 with DAG('global_popular_videos_l90d', default_args=default_args, schedule_interval='10 0 * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
-        python_callable=create_global_popular_videos_l90d
+        python_callable=create_global_popular_videos_l90d,
+        on_failure_callback=send_alert_to_google_chat
     )

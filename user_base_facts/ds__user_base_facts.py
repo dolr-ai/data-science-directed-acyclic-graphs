@@ -4,6 +4,15 @@ from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
 from datetime import datetime
 from google.cloud import bigquery
+import requests
+
+
+def send_alert_to_google_chat():
+    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
+    message = {
+        "text": f"DAG global_popular_videos_l90d failed."
+    }
+    requests.post(webhook_url, json=message)
 
 init_ubf_query = """
 CREATE OR REPLACE TABLE `yral_ds.user_base_facts`
@@ -133,5 +142,6 @@ default_args = {
 with DAG('user_base_facts', default_args=default_args, schedule_interval='0 0 * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
-        python_callable=updaet_or_init_ubf_table
+        python_callable=updaet_or_init_ubf_table,
+        on_failure_callback=send_alert_to_google_chat
     )

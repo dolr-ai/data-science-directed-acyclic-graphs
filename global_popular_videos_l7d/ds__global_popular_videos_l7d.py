@@ -13,9 +13,9 @@ default_args = {
 }
 
 def send_alert_to_google_chat():
-    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAeYc0QQ8/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=QGXm3zD8uV_-OwF_HteGny5k41Dwtario7GQahBlCFs"
+    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
     message = {
-        "text": f"DAG global_popular_videos_l7d completed successfully"
+        "text": f"DAG global_popular_videos_l7d failed."
     }
     requests.post(webhook_url, json=message)
 
@@ -65,12 +65,6 @@ def create_global_popular_videos_l7d():
 with DAG('global_popular_videos_l7d', default_args=default_args, schedule_interval='10 0 * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
-        python_callable=create_global_popular_videos_l7d
+        python_callable=create_global_popular_videos_l7d,
+        on_failure_callback=send_alert_to_google_chat
     )
-
-    send_alert_task = PythonOperator(
-        task_id='send_alert_task',
-        python_callable=send_alert_to_google_chat
-    )
-
-    run_query_task >> send_alert_task

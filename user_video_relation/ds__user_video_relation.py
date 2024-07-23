@@ -4,6 +4,14 @@ from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
 from datetime import datetime
 from google.cloud import bigquery
+import requests
+
+def send_alert_to_google_chat():
+    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
+    message = {
+        "text": f"DAG global_popular_videos_l90d failed."
+    }
+    requests.post(webhook_url, json=message)
 
 def check_table_exists():
     client = bigquery.Client()
@@ -153,5 +161,6 @@ default_args = {
 with DAG('user_video_interaction_dag', default_args=default_args, schedule_interval='*/15 * * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
-        python_callable=run_query
+        python_callable=run_query,
+        on_failure_callback=send_alert_to_google_chat
     )
