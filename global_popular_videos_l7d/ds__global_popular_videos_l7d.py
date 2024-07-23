@@ -4,13 +4,20 @@ from airflow.utils.dates import days_ago
 from datetime import timedelta
 from datetime import datetime
 from google.cloud import bigquery
-
+import requests
 
 default_args = {
     'owner': 'airflow',
     'start_date': days_ago(1),
     'retries': 1,
 }
+
+def send_alert_to_google_chat(context):
+    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAeYc0QQ8/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=QGXm3zD8uV_-OwF_HteGny5k41Dwtario7GQahBlCFs"
+    message = {
+        "text": f"DAG {context['dag'].dag_id} completed successfully"
+    }
+    requests.post(webhook_url, json=message)
 
 
 query = """
@@ -60,3 +67,11 @@ with DAG('global_popular_videos_l7d', default_args=default_args, schedule_interv
         task_id='run_query_task',
         python_callable=create_global_popular_videos_l7d
     )
+
+    send_alert_task = PythonOperator(
+        task_id='send_alert_task',
+        python_callable=send_alert_to_google_chat,
+        provide_context=True
+    )
+
+    run_query_task >> send_alert_task
