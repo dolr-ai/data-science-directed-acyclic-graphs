@@ -31,7 +31,9 @@ with DAG(
         hook = GCSHook()
         obj_list = hook.list("yral-videos")
 
-        for obj in obj_list[:10]:
+        for obj_mp4 in obj_list[:10]:
+            print(obj_mp4)
+            obj = hook.get_metadata("yral-videos", obj_mp4)
             print(obj)
 
     enrich_objects = PythonOperator(
