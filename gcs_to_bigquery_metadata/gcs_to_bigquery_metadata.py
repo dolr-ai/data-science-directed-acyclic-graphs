@@ -29,6 +29,7 @@ with DAG(
 
     def enrich_metadata(**kwargs):
         hook = GCSHook()
+        print(dir(hook))
         obj_list = hook.list("yral-videos")
 
         for obj_mp4 in obj_list[:10]:
