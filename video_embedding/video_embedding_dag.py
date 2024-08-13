@@ -1,13 +1,7 @@
 from airflow import DAG
-from airflow.providers.google.cloud.operators.bigquery import (
-    BigQueryExecuteQueryOperator,
-    BigQueryGetDataOperator,
-)
 from airflow.operators.python_operator import PythonOperator
-from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.contrib.hooks.bigquery_hook import BigQueryHook
 from airflow.utils.dates import days_ago
-from datetime import datetime, timedelta
 import requests
 
 default_args = {
@@ -18,9 +12,9 @@ default_args = {
 
 
 def send_alert_to_google_chat():
-    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
+    webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAeYc0QQ8/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=QGXm3zD8uV_-OwF_HteGny5k41Dwtario7GQahBlCFs"
     message = {
-        "text": f"DAG global_popular_videos_l90d failed."
+        "text": f"DAG video_embedding_dag failed."
     }
     requests.post(webhook_url, json=message)
 
@@ -35,7 +29,28 @@ FROM ML.GENERATE_EMBEDDING(
   STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
 );
 """
-
+incremental_update_query = """
+MERGE INTO `hot-or-not-feed-intelligence.yral_ds.video_index` AS vi
+USING (
+  SELECT
+    uri,
+    (SELECT value FROM UNNEST(metadata) WHERE name = 'post_id') AS post_id,
+    (SELECT value FROM UNNEST(metadata) WHERE name = 'timestamp') AS timestamp,
+    (SELECT value FROM UNNEST(metadata) WHERE name = 'canister_id') AS canister_id,
+    ml_generate_embedding_result as embedding
+  FROM
+    `hot-or-not-feed-intelligence.yral_ds.video_embeddings`
+  WHERE
+    ARRAY_LENGTH(ml_generate_embedding_result) = 1408
+    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'timestamp')
+    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'post_id')
+    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'canister_id')
+) AS ve
+ON vi.uri = ve.uri
+WHEN NOT MATCHED THEN
+  INSERT (uri, post_id, timestamp, canister_id, embedding)
+  VALUES (ve.uri, ve.post_id, ve.timestamp, ve.canister_id, ve.embedding)
+"""
 
 with DAG(
     "video_embed_pipeline_dag",
@@ -47,23 +62,29 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # run_create_embed_query = BigQueryExecuteQueryOperator(
-    #     task_id="run_query",
-    #     sql=create_embed_query,
-    #     use_legacy_sql=False,
-    #     dag=dag,
-    # )
-
     def run_create_embed_query(**kwargs):
         hook = BigQueryHook(use_legacy_sql=False)
         conn = hook.get_conn()
         cursor = conn.cursor()
         cursor.execute(create_embed_query)
 
+    def run_vector_index_update_query(**kwargs):
+        hook = BigQueryHook(use_legacy_sql=False)
+        conn = hook.get_conn()
+        cursor = conn.cursor()
+        cursor.execute(incremental_update_query)
+
     run_query = PythonOperator(
         task_id="run_create_embed_query",
         provide_context=True,
         python_callable=run_create_embed_query,
+        on_failure_callback=send_alert_to_google_chat
+    )
+
+    run_update_query = PythonOperator(
+        task_id="run_vector_index_update_query",
+        provide_context=True,
+        python_callable=run_vector_index_update_query,
         on_failure_callback=send_alert_to_google_chat
     )
 
@@ -113,7 +134,7 @@ with DAG(
 
     # Define task dependencies
     (
-        run_query
+        run_query >> run_update_query
         # >> fetch_data
         # >> process_uris
         # >> transfer_and_delete_gcs_objects
