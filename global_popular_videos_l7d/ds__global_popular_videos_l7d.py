@@ -46,18 +46,6 @@ stats_with_mean_std AS (
     FROM
         stats
 ),
-stats_with_mean_std AS (
-    SELECT
-        video_id,
-        like_perc,
-        watch_perc,
-        AVG(like_perc) OVER() AS mean_like_perc,
-        STDDEV(like_perc) OVER() AS stddev_like_perc,
-        AVG(watch_perc) OVER() AS mean_watch_perc,
-        STDDEV(watch_perc) OVER() AS stddev_watch_perc
-    FROM
-        stats
-),
 normalized_stats AS (
     SELECT
         video_id,
