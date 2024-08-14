@@ -49,7 +49,6 @@ stats_with_mean_std AS (
 normalized_stats AS (
     SELECT
         video_id,
-        region,
         (like_perc - mean_like_perc) / stddev_like_perc AS normalized_like_perc,
         (watch_perc - mean_watch_perc) / stddev_watch_perc AS normalized_watch_perc
     FROM
@@ -58,7 +57,6 @@ normalized_stats AS (
 offset_stats AS (
     SELECT
         video_id,
-        region,
         normalized_like_perc,
         normalized_watch_perc,
         LEAST(normalized_like_perc, normalized_watch_perc) AS min_normalized_perc
@@ -67,14 +65,13 @@ offset_stats AS (
 )
 SELECT
     video_id,
-    region,
     normalized_like_perc,
     normalized_watch_perc,
     2 / (1 / (normalized_like_perc - min_normalized_perc + 1 + 1e-9) + 1 / (normalized_watch_perc - min_normalized_perc + 1 + 1e-9)) AS global_popularity_score
 FROM
     offset_stats
 ORDER BY
-    region DESC, global_popularity_score DESC
+    global_popularity_score DESC
 """
 
 def create_global_popular_videos_l7d():
