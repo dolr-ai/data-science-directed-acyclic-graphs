@@ -24,7 +24,7 @@ CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.global_popular_vid
 WITH stats AS (
     SELECT 
         video_id,
-        AVG(CAST(liked AS INT64)) * 100 AS like_perc,
+        AVG(CAST(liked AS INT64)) AS like_perc,
         AVG(mean_percentage_watched) AS watch_perc
     FROM 
         `hot-or-not-feed-intelligence.yral_ds.userVideoRelation`

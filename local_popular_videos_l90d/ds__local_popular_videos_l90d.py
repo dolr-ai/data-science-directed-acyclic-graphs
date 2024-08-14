@@ -33,7 +33,7 @@ WITH
         SELECT
             video_id,
             ur.region AS region,
-            AVG(CAST(liked AS INT64)) * 100 AS like_perc,
+            AVG(CAST(liked AS INT64)) AS like_perc,
             AVG(mean_percentage_watched) AS watch_perc
         FROM
             `hot-or-not-feed-intelligence.yral_ds.userVideoRelation` uvr
