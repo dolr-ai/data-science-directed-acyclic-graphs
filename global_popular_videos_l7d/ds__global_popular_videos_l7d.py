@@ -65,8 +65,8 @@ offset_stats AS (
 )
 SELECT
     video_id,
-    normalized_like_perc,
-    normalized_watch_perc,
+    normalized_like_perc - min_normalized_perc + 1 as normalized_like_perc_p,
+    normalized_watch_perc - min_normalized_perc + 1 as normalized_watch_perc_p,
     2 / (1 / (normalized_like_perc - min_normalized_perc + 1 + 1e-9) + 1 / (normalized_watch_perc - min_normalized_perc + 1 + 1e-9)) AS global_popularity_score
 FROM
     offset_stats

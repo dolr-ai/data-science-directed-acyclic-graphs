@@ -64,6 +64,19 @@ def create_initial_query():
         event = 'like_video'
       GROUP BY 
         user_id, video_id
+    ),
+    video_shared as (
+      SELECT
+        JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+        JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+        max(timestamp) as last_shared_timestamp,
+        TRUE AS shared
+      FROM
+        analytics_335143420.test_events_analytics
+      WHERE
+        event = 'share_video'
+      GROUP BY
+        user_id, video_id
     )
     SELECT 
       vw.user_id,
@@ -71,13 +84,21 @@ def create_initial_query():
       vw.last_watched_timestamp,
       vw.mean_percentage_watched,
       vl.last_liked_timestamp,
-      COALESCE(vl.liked, FALSE) AS liked
+      COALESCE(vl.liked, FALSE) AS liked,
+      vs.last_shared_timestamp,
+      COALESCE(vs.shared, FALSE) AS shared
     FROM 
       video_watched vw
     LEFT JOIN 
       video_liked vl
     ON 
-      vw.user_id = vl.user_id AND vw.video_id = vl.video_id
+        vw.user_id = vl.user_id 
+        AND vw.video_id = vl.video_id
+    LEFT JOIN
+      video_shared vs
+    ON
+      vw.user_id = vs.user_id
+      AND vw.video_id = vs.video_id
     order by last_watched_timestamp desc;
     """
 
@@ -112,6 +133,20 @@ def create_incremental_query(last_timestamp):
           and timestamp > '{last_timestamp}'
         GROUP BY 
           user_id, video_id
+      ),
+      video_shared as (
+        SELECT
+          JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+          JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+          max(timestamp) as last_shared_timestamp,
+          TRUE AS shared
+        FROM
+          analytics_335143420.test_events_analytics
+        WHERE
+          event = 'share_video'
+          and timestamp > '{last_timestamp}'
+        GROUP BY
+          user_id, video_id
       )
       SELECT 
         vw.user_id,
@@ -119,13 +154,20 @@ def create_incremental_query(last_timestamp):
         vw.last_watched_timestamp,
         vw.mean_percentage_watched,
         vl.last_liked_timestamp,
-        COALESCE(vl.liked, FALSE) AS liked
+        COALESCE(vl.liked, FALSE) AS liked,
+        vs.last_shared_timestamp,
+        COALESCE(vs.shared, FALSE) AS shared
       FROM 
         video_watched vw
       LEFT JOIN 
         video_liked vl
       ON 
         vw.user_id = vl.user_id AND vw.video_id = vl.video_id
+      LEFT JOIN
+        video_shared vs
+      ON
+        vw.user_id = vs.user_id
+        AND vw.video_id = vs.video_id
       ORDER BY 
         vw.last_watched_timestamp DESC
     ) S
@@ -135,10 +177,12 @@ def create_incremental_query(last_timestamp):
         T.mean_percentage_watched = S.mean_percentage_watched,
         T.last_watched_timestamp = S.last_watched_timestamp,
         T.last_liked_timestamp = S.last_liked_timestamp,
-        T.liked = T.liked OR S.liked
+        T.liked = T.liked OR S.liked,
+        T.last_shared_timestamp = S.last_shared_timestamp,
+        T.shared = T.shared OR S.shared
     WHEN NOT MATCHED THEN
-      INSERT (user_id, video_id, last_watched_timestamp, mean_percentage_watched, last_liked_timestamp, liked)
-      VALUES (S.user_id, S.video_id, S.last_watched_timestamp, S.mean_percentage_watched, S.last_liked_timestamp, S.liked)
+      INSERT (user_id, video_id, last_watched_timestamp, mean_percentage_watched, last_liked_timestamp, liked, last_shared_timestamp, shared)
+      VALUES (S.user_id, S.video_id, S.last_watched_timestamp, S.mean_percentage_watched, S.last_liked_timestamp, S.liked, S.last_shared_timestamp, S.shared)
     """
 
 def run_query():
