@@ -68,3 +68,7 @@ jobs:
             --environment data-pipeline-orchestrator \
             --location us-central1 \
             --source ./gcs_to_bigquery_metadata/
+          gcloud composer environments storage dags import \
+            --environment data-pipeline-orchestrator \
+            --location us-central1 \
+            --source ./user_video_metrics/

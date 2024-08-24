@@ -39,10 +39,10 @@ stats_with_mean_std AS (
         video_id,
         like_perc,
         watch_perc,
-        AVG(like_perc) OVER() AS mean_like_perc,
-        STDDEV(like_perc) OVER() AS stddev_like_perc,
-        AVG(watch_perc) OVER() AS mean_watch_perc,
-        STDDEV(watch_perc) OVER() AS stddev_watch_perc
+        AVG(like_perc) OVER() AS mean_like_perc, -- global mean like_perc
+        STDDEV(like_perc) OVER() AS stddev_like_perc, -- global stddev like_perc
+        AVG(watch_perc) OVER() AS mean_watch_perc, -- global mean watch_perc
+        STDDEV(watch_perc) OVER() AS stddev_watch_perc -- global stddev watch_perc
     FROM
         stats
 ),
