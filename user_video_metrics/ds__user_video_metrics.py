@@ -70,8 +70,6 @@ FROM
 
 def create_incremental_query():
     return """
-
-
 MERGE `hot-or-not-feed-intelligence.yral_ds.user_video_metrics` T
 USING (
   SELECT
@@ -89,46 +87,98 @@ USING (
   FROM
     `hot-or-not-feed-intelligence.yral_ds.userVideoRelation`
   WHERE
-    last_watched_timestamp > (SELECT MAX(last_update_timestamp) FROM `hot-or-not-feed-intelligence.yral_ds.user_metrics`)
+    last_watched_timestamp > (
+      SELECT MAX(last_update_timestamp) 
+      FROM `hot-or-not-feed-intelligence.yral_ds.user_video_metrics`
+    )
   GROUP BY user_id
-) S -- new batch metrics
-
+) S
 ON T.user_id = S.user_id
-
 WHEN MATCHED THEN
   UPDATE SET 
-    T.user_like_avg = (T.user_like_avg * T.total_watches + S.user_like_avg * S.total_watches) / (T.total_watches + S.total_watches),
+    T.user_like_avg = (
+      T.user_like_avg * T.total_watches + S.user_like_avg * S.total_watches
+    ) / (T.total_watches + S.total_watches),
     T.user_like_stddev = SQRT(
-        (
-            (T.total_watches - 1) * POW(T.user_like_stddev, 2) + 
-            (S.total_watches - 1) * POW(S.user_like_stddev, 2) + 
-            (T.total_watches * S.total_watches / (T.total_watches + S.total_watches)) * POW(T.user_like_avg - S.user_like_avg, 2)
-        ) / (T.total_watches + S.total_watches - 1)
+      (
+        (T.total_watches - 1) * POW(T.user_like_stddev, 2) + 
+        (S.total_watches - 1) * POW(S.user_like_stddev, 2) + 
+        (T.total_watches * S.total_watches / (T.total_watches + S.total_watches)) * 
+        POW(T.user_like_avg - S.user_like_avg, 2)
+      ) / (T.total_watches + S.total_watches - 1)
     ),
     T.total_likes = T.total_likes + S.total_likes,
-    T.user_share_avg = (T.user_share_avg * T.total_watches + S.user_share_avg * S.total_watches) / (T.total_watches + S.total_watches),
+    T.user_share_avg = (
+      T.user_share_avg * T.total_watches + S.user_share_avg * S.total_watches
+    ) / (T.total_watches + S.total_watches),
     T.user_share_stddev = SQRT(
-        (
-            (T.total_watches - 1) * POW(T.user_share_stddev, 2) + 
-            (S.total_watches - 1) * POW(S.user_share_stddev, 2) + 
-            (T.total_watches * S.total_watches / (T.total_watches + S.total_watches)) * POW(T.user_share_avg - S.user_share_avg, 2)
-        ) / (T.total_watches + S.total_watches - 1)
+      (
+        (T.total_watches - 1) * POW(T.user_share_stddev, 2) + 
+        (S.total_watches - 1) * POW(S.user_share_stddev, 2) + 
+        (T.total_watches * S.total_watches / (T.total_watches + S.total_watches)) * 
+        POW(T.user_share_avg - S.user_share_avg, 2)
+      ) / (T.total_watches + S.total_watches - 1)
     ),
     T.total_shares = T.total_shares + S.total_shares,
-    T.user_watch_percentage_avg = (T.user_watch_percentage_avg * T.total_watches + S.user_watch_percentage_avg * S.total_watches) / (T.total_watches + S.total_watches),
+    T.user_watch_percentage_avg = (
+      T.user_watch_percentage_avg * T.total_watches + S.user_watch_percentage_avg * S.total_watches
+    ) / (T.total_watches + S.total_watches),
     T.user_watch_percentage_stddev = SQRT(
-        (
-            (T.total_watches - 1) * POW(T.user_watch_percentage_stddev, 2) + 
-            (S.total_watches - 1) * POW(S.user_watch_percentage_stddev, 2) + 
-            (T.total_watches * S.total_watches / (T.total_watches + S.total_watches)) * POW(T.user_watch_percentage_avg - S.user_watch_percentage_avg, 2)
-        ) / (T.total_watches + S.total_watches - 1)
+      (
+        (T.total_watches - 1) * POW(T.user_watch_percentage_stddev, 2) + 
+        (S.total_watches - 1) * POW(S.user_watch_percentage_stddev, 2) + 
+        (T.total_watches * S.total_watches / (T.total_watches + S.total_watches)) * 
+        POW(T.user_watch_percentage_avg - S.user_watch_percentage_avg, 2)
+      ) / (T.total_watches + S.total_watches - 1)
     ),
     T.total_watches = T.total_watches + S.total_watches,
+    T.user_normalized_like_avg = T.user_like_avg * (1 - T.user_like_avg),
+    T.user_normalized_like_stddev = (1 - T.user_like_avg) * T.user_like_stddev,
+    T.user_normalized_share_avg = T.user_share_avg * (1 - T.user_share_avg),
+    T.user_normalized_share_stddev = (1 - T.user_share_avg) * T.user_share_stddev,
+    T.user_normalized_watch_percentage_avg = T.user_watch_percentage_avg * (1 - T.user_watch_percentage_avg),
+    T.user_normalized_watch_percentage_stddev = (1 - T.user_watch_percentage_avg) * T.user_watch_percentage_stddev,
     T.last_update_timestamp = S.last_update_timestamp
 WHEN NOT MATCHED THEN
-  INSERT (user_id, user_like_avg, user_like_stddev, total_likes, user_share_avg, user_share_stddev, total_shares, user_watch_percentage_avg, user_watch_percentage_stddev, total_watches, last_update_timestamp)
-  VALUES (S.user_id, S.user_like_avg, S.user_like_stddev, S.total_likes, S.user_share_avg, S.user_share_stddev, S.total_shares, S.user_watch_percentage_avg, S.user_watch_percentage_stddev, S.total_watches, S.last_update_timestamp)
-    """
+  INSERT (
+    user_id, 
+    user_like_avg, 
+    user_like_stddev, 
+    total_likes, 
+    user_share_avg, 
+    user_share_stddev, 
+    total_shares, 
+    user_watch_percentage_avg, 
+    user_watch_percentage_stddev, 
+    total_watches, 
+    user_normalized_like_avg, 
+    user_normalized_like_stddev, 
+    user_normalized_share_avg, 
+    user_normalized_share_stddev, 
+    user_normalized_watch_percentage_avg, 
+    user_normalized_watch_percentage_stddev, 
+    last_update_timestamp
+  )
+  VALUES (
+    S.user_id, 
+    S.user_like_avg, 
+    S.user_like_stddev, 
+    S.total_likes, 
+    S.user_share_avg, 
+    S.user_share_stddev, 
+    S.total_shares, 
+    S.user_watch_percentage_avg, 
+    S.user_watch_percentage_stddev, 
+    S.total_watches, 
+    S.user_like_avg * (1 - S.user_like_avg), 
+    (1 - S.user_like_avg) * S.user_like_stddev, 
+    S.user_share_avg * (1 - S.user_share_avg), 
+    (1 - S.user_share_avg) * S.user_share_stddev, 
+    S.user_watch_percentage_avg * (1 - S.user_watch_percentage_avg), 
+    (1 - S.user_watch_percentage_avg) * S.user_watch_percentage_stddev, 
+    S.last_update_timestamp
+  )
+"""
 
 def run_query():
     if check_table_exists():
