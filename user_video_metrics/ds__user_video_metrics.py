@@ -196,7 +196,7 @@ default_args = {
     'retries': 1,
 }
 
-with DAG('user_video_metrics', default_args=default_args, schedule_interval='*/15 * * * *', catchup=False) as dag:
+with DAG('user_video_metrics', default_args=default_args, schedule_interval='*/30 * * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
         python_callable=run_query,

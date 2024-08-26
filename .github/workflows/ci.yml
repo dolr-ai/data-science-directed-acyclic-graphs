@@ -72,3 +72,19 @@ jobs:
             --environment data-pipeline-orchestrator \
             --location us-central1 \
             --source ./user_video_metrics/
+          gcloud composer environments storage dags import \
+            --environment data-pipeline-orchestrator \
+            --location us-central1 \
+            --source ./video_statistics/
+          gcloud composer environments storage dags import \
+            --environment data-pipeline-orchestrator \
+            --location us-central1 \
+            --source ./global_video_stats/
+          gcloud composer environments storage dags import \
+            --environment data-pipeline-orchestrator \
+            --location us-central1 \
+            --source ./normalized_video_statistics/
+          gcloud composer environments storage dags import \
+            --environment data-pipeline-orchestrator \
+            --location us-central1 \
+            --source ./video_statistics_normalized/
