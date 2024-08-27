@@ -71,11 +71,13 @@ def create_incremental_query():
 MERGE `hot-or-not-feed-intelligence.yral_ds.video_statistics` T
 USING (
   WITH user_contributions AS (
+    select
     uvr.video_id,
     uvr.user_id,
     (1 - IFNULL(user_like_avg, 1)) * CAST(liked AS INT64) AS user_normalized_like_contribution,
     (1 - IFNULL(user_share_avg, 1)) * CAST(shared AS INT64) AS user_normalized_share_contribution,
-    ((100 - IFNULL(user_watch_percentage_avg, 100))/100) * mean_percentage_watched AS user_normalized_watch_contribution
+    ((100 - IFNULL(user_watch_percentage_avg, 100))/100) * mean_percentage_watched AS user_normalized_watch_contribution,
+    last_watched_timestamp
   FROM
     `hot-or-not-feed-intelligence.yral_ds.userVideoRelation` uvr
   LEFT JOIN
