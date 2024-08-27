@@ -89,8 +89,17 @@ USING (
       (vs.user_normalized_like_perc - gs.global_avg_user_normalized_likes) / gs.global_stddev_user_normalized_likes AS normalized_like_perc,
       (vs.user_normalized_share_perc - gs.global_avg_user_normalized_shares) / gs.global_stddev_user_normalized_shares AS normalized_share_perc,
       (vs.user_normalized_watch_percentage_perc - gs.global_avg_user_normalized_watch_percentage) / gs.global_stddev_user_normalized_watch_percentage AS normalized_watch_perc,
+      user_normalized_like_perc as like_percentage_un,
+      user_normalized_share_perc as share_percentage_un,
+      user_normalized_watch_percentage_perc as watch_percentage_un,
       vs.total_impressions,
-      vs.last_update_timestamp
+      vs.last_update_timestamp,
+      gs.global_avg_user_normalized_likes,
+      gs.global_stddev_user_normalized_likes,
+      gs.global_avg_user_normalized_shares,
+      gs.global_stddev_user_normalized_shares,
+      gs.global_avg_user_normalized_watch_percentage,
+      gs.global_stddev_user_normalized_watch_percentage
     FROM
       `hot-or-not-feed-intelligence.yral_ds.video_statistics` vs,
       global_stats gs
@@ -106,7 +115,13 @@ USING (
     normalized_share_perc,
     normalized_watch_perc,
     total_impressions,
-    last_update_timestamp
+    last_update_timestamp,
+    global_avg_user_normalized_likes,
+    global_stddev_user_normalized_likes,
+    global_avg_user_normalized_shares,
+    global_stddev_user_normalized_shares,
+    global_avg_user_normalized_watch_percentage,
+    global_stddev_user_normalized_watch_percentage
   FROM
     normalized_stats
 ) S
@@ -116,9 +131,9 @@ WHEN MATCHED THEN
     T.like_percentage_un = (T.like_percentage_un * T.total_impressions + S.like_percentage_un * S.total_impressions) / (T.total_impressions + S.total_impressions),
     T.share_percentage_un = (T.share_percentage_un * T.total_impressions + S.share_percentage_un * S.total_impressions) / (T.total_impressions + S.total_impressions),
     T.watch_percentage_un = (T.watch_percentage_un * T.total_impressions + S.watch_percentage_un * S.total_impressions) / (T.total_impressions + S.total_impressions),
-    T.normalized_like_perc = (T.like_percentage_un - gs.global_avg_user_normalized_likes) / gs.global_stddev_user_normalized_likes,
-    T.normalized_share_perc = (T.share_percentage_un - gs.global_avg_user_normalized_shares) / gs.global_stddev_user_normalized_shares,
-    T.normalized_watch_perc = (T.watch_percentage_un - gs.global_avg_user_normalized_watch_percentage) / gs.global_stddev_user_normalized_watch_percentage,
+    T.normalized_like_perc = (T.like_percentage_un - S.global_avg_user_normalized_likes) / S.global_stddev_user_normalized_likes,
+    T.normalized_share_perc = (T.share_percentage_un - S.global_avg_user_normalized_shares) / S.global_stddev_user_normalized_shares,
+    T.normalized_watch_perc = (T.watch_percentage_un - S.global_avg_user_normalized_watch_percentage) / S.global_stddev_user_normalized_watch_percentage,
     T.total_impressions = T.total_impressions + S.total_impressions,
     T.last_update_timestamp = S.last_update_timestamp
 WHEN NOT MATCHED THEN
