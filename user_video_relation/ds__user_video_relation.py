@@ -115,10 +115,10 @@ def create_incremental_query(last_timestamp):
           AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched
         FROM 
           analytics_335143420.test_events_analytics
-          AND CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64) <= 100
         WHERE 
           event = 'video_duration_watched'
-          and timestamp > '{last_timestamp}'
+          AND timestamp > '{last_timestamp}'
+          AND CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64) <= 100
         GROUP BY
           user_id, video_id
       ),
