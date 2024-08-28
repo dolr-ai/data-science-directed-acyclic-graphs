@@ -44,7 +44,7 @@ def create_initial_query():
         JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
         JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
         max(timestamp) as last_watched_timestamp,
-        AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched
+        AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64))/100 AS mean_percentage_watched
       FROM 
         analytics_335143420.test_events_analytics -- base analytics table -- change this if the table name changes
       WHERE 
@@ -112,7 +112,7 @@ def create_incremental_query(last_timestamp):
           JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
           JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
           max(timestamp) as last_watched_timestamp,
-          AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64)) AS mean_percentage_watched
+          AVG(CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64))/100 AS mean_percentage_watched
         FROM 
           analytics_335143420.test_events_analytics
         WHERE 
