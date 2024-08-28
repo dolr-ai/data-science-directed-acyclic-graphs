@@ -49,7 +49,7 @@ def create_initial_query():
         analytics_335143420.test_events_analytics -- base analytics table -- change this if the table name changes
       WHERE 
         event = 'video_duration_watched'
-        AND CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64) <= 100
+        AND CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64) <= 100 -- there is some issue if this is greater than 100
       GROUP BY 
         user_id, video_id
     ),
@@ -100,7 +100,7 @@ def create_initial_query():
     ON
       vw.user_id = vs.user_id
       AND vw.video_id = vs.video_id
-    order by last_watched_timestamp desc;
+    order by last_watched_timestamp desc; -- unit tests -- per video id & per user id
     """
 
 def create_incremental_query(last_timestamp):
@@ -118,7 +118,7 @@ def create_incremental_query(last_timestamp):
         WHERE 
           event = 'video_duration_watched'
           AND timestamp > '{last_timestamp}'
-          AND CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64) <= 100
+          AND CAST(JSON_EXTRACT_SCALAR(params, '$.percentage_watched') AS FLOAT64) <= 100 -- there is some issue if this is greater than 100
         GROUP BY
           user_id, video_id
       ),
