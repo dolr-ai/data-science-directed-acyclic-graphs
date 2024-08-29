@@ -31,11 +31,20 @@ CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.video_statistics_n
 WITH global_stats AS (
   SELECT
     global_avg_user_normalized_likes,
-    global_stddev_user_normalized_likes,
+    CASE 
+      WHEN global_stddev_user_normalized_likes < 0.01 THEN 0.01 
+      ELSE global_stddev_user_normalized_likes 
+    END AS global_stddev_user_normalized_likes,
     global_avg_user_normalized_shares,
-    global_stddev_user_normalized_shares,
+    CASE 
+      WHEN global_stddev_user_normalized_shares < 0.01 THEN 0.01 
+      ELSE global_stddev_user_normalized_shares 
+    END AS global_stddev_user_normalized_shares,
     global_avg_user_normalized_watch_percentage,
-    global_stddev_user_normalized_watch_percentage
+    CASE 
+      WHEN global_stddev_user_normalized_watch_percentage < 0.01 THEN 0.01 
+      ELSE global_stddev_user_normalized_watch_percentage 
+    END AS global_stddev_user_normalized_watch_percentage
   FROM
     `hot-or-not-feed-intelligence.yral_ds.global_video_stats`
 ),
@@ -63,7 +72,9 @@ SELECT
   normalized_share_perc,
   normalized_watch_perc,
   total_impressions,
-  last_update_timestamp
+  last_update_timestamp,
+  3 * (normalized_like_perc + 120) * (normalized_share_perc + 120) * (normalized_watch_perc + 120) /
+  (normalized_like_perc + 120 + normalized_share_perc + 120 + normalized_watch_perc + 120) AS ds_quality_score
 FROM
   normalized_stats;
     """
@@ -75,11 +86,20 @@ USING (
   WITH global_stats AS (
     SELECT
       global_avg_user_normalized_likes,
-      global_stddev_user_normalized_likes,
+      CASE 
+        WHEN global_stddev_user_normalized_likes < 0.01 THEN 0.01 
+        ELSE global_stddev_user_normalized_likes 
+      END AS global_stddev_user_normalized_likes,
       global_avg_user_normalized_shares,
-      global_stddev_user_normalized_shares,
+      CASE 
+        WHEN global_stddev_user_normalized_shares < 0.01 THEN 0.01 
+        ELSE global_stddev_user_normalized_shares 
+      END AS global_stddev_user_normalized_shares,
       global_avg_user_normalized_watch_percentage,
-      global_stddev_user_normalized_watch_percentage
+      CASE 
+        WHEN global_stddev_user_normalized_watch_percentage < 0.01 THEN 0.01 
+        ELSE global_stddev_user_normalized_watch_percentage 
+      END AS global_stddev_user_normalized_watch_percentage
     FROM
       `hot-or-not-feed-intelligence.yral_ds.global_video_stats`
   ),
@@ -99,7 +119,9 @@ USING (
       gs.global_avg_user_normalized_shares,
       gs.global_stddev_user_normalized_shares,
       gs.global_avg_user_normalized_watch_percentage,
-      gs.global_stddev_user_normalized_watch_percentage
+      gs.global_stddev_user_normalized_watch_percentage,
+      3 * (normalized_like_perc + 120) * (normalized_share_perc + 120) * (normalized_watch_perc + 120) /
+      (normalized_like_perc + 120 + normalized_share_perc + 120 + normalized_watch_perc + 120) AS ds_quality_score
     FROM
       `hot-or-not-feed-intelligence.yral_ds.video_statistics` vs,
       global_stats gs
@@ -121,7 +143,8 @@ USING (
     global_avg_user_normalized_shares,
     global_stddev_user_normalized_shares,
     global_avg_user_normalized_watch_percentage,
-    global_stddev_user_normalized_watch_percentage
+    global_stddev_user_normalized_watch_percentage,
+    ds_quality_score
   FROM
     normalized_stats
 ) S
@@ -135,10 +158,12 @@ WHEN MATCHED THEN
     T.normalized_share_perc = IFNULL((T.share_percentage_un - S.global_avg_user_normalized_shares) / NULLIF(S.global_stddev_user_normalized_shares, 0), 0),
     T.normalized_watch_perc = IFNULL((T.watch_percentage_un - S.global_avg_user_normalized_watch_percentage) / NULLIF(S.global_stddev_user_normalized_watch_percentage, 0), 0),
     T.total_impressions = T.total_impressions + S.total_impressions,
-    T.last_update_timestamp = S.last_update_timestamp
+    T.last_update_timestamp = S.last_update_timestamp,
+    T.ds_quality_score = 3 * (T.normalized_like_perc + 120) * (T.normalized_share_perc + 120) * (T.normalized_watch_perc + 120) /
+    (T.normalized_like_perc + 120 + T.normalized_share_perc + 120 + T.normalized_watch_perc + 120)
 WHEN NOT MATCHED THEN
-  INSERT (video_id, like_percentage_un, share_percentage_un, watch_percentage_un, normalized_like_perc, normalized_share_perc, normalized_watch_perc, total_impressions, last_update_timestamp)
-  VALUES (S.video_id, S.like_percentage_un, S.share_percentage_un, S.watch_percentage_un, S.normalized_like_perc, S.normalized_share_perc, S.normalized_watch_perc, S.total_impressions, S.last_update_timestamp);
+  INSERT (video_id, like_percentage_un, share_percentage_un, watch_percentage_un, normalized_like_perc, normalized_share_perc, normalized_watch_perc, total_impressions, last_update_timestamp, ds_quality_score)
+  VALUES (S.video_id, S.like_percentage_un, S.share_percentage_un, S.watch_percentage_un, S.normalized_like_perc, S.normalized_share_perc, S.normalized_watch_perc, S.total_impressions, S.last_update_timestamp, S.ds_quality_score);
 """
 
 def run_query():

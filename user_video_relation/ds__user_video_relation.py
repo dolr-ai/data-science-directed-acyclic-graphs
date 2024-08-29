@@ -1,8 +1,6 @@
 from airflow import DAG
 from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
-from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
-from datetime import datetime
 from google.cloud import bigquery
 import requests
 
