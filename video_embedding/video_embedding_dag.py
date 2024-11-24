@@ -18,17 +18,103 @@ def send_alert_to_google_chat():
     }
     requests.post(webhook_url, json=message)
 
-# Your SQL query as a string
+"""
+One time nsfw initialisation query 
+
+```
+
+MERGE INTO `hot-or-not-feed-intelligence.yral_ds.video_embeddings` AS target
+USING (
+  SELECT 
+    gcs_video_id,
+    nsfw_ec,
+    nsfw_gore,
+    is_nsfw,
+    ROW_NUMBER() OVER(PARTITION BY gcs_video_id ORDER BY nsfw_ec DESC) as rn
+  FROM `hot-or-not-feed-intelligence.yral_ds.video_nsfw`
+) AS source
+ON target.uri = source.gcs_video_id AND source.rn = 1
+WHEN MATCHED THEN
+  UPDATE SET 
+    target.nsfw_ec = source.nsfw_ec,
+    target.nsfw_gore = source.nsfw_gore,
+    target.is_nsfw = source.is_nsfw
+WHEN NOT MATCHED BY SOURCE THEN
+  UPDATE SET 
+    target.nsfw_ec = "",
+    target.nsfw_gore = "",
+    target.is_nsfw = FALSE;   
+```
+
+
+
+One time video index initialisation query 
+
+```
+
+MERGE INTO `hot-or-not-feed-intelligence.yral_ds.video_index` AS target
+USING (
+  SELECT 
+    gcs_video_id,
+    nsfw_ec,
+    nsfw_gore,
+    is_nsfw,
+    ROW_NUMBER() OVER(PARTITION BY gcs_video_id ORDER BY nsfw_ec DESC) as rn
+  FROM `hot-or-not-feed-intelligence.yral_ds.video_nsfw`
+) AS source
+ON target.uri = source.gcs_video_id AND source.rn = 1
+WHEN MATCHED THEN
+  UPDATE SET 
+    target.nsfw_ec = source.nsfw_ec,
+    target.nsfw_gore = source.nsfw_gore,
+    target.is_nsfw = source.is_nsfw
+WHEN NOT MATCHED BY SOURCE THEN
+  UPDATE SET 
+    target.nsfw_ec = "",
+    target.nsfw_gore = "",
+    target.is_nsfw = FALSE;
+    
+```
+
+
+"""
+
 create_embed_query = """
 INSERT INTO `hot-or-not-feed-intelligence.yral_ds.video_embeddings` 
+WITH embedding_table AS (
+  SELECT
+    *
+  FROM
+    ML.GENERATE_EMBEDDING(
+      MODEL `hot-or-not-feed-intelligence.yral_ds.mm_embed`,
+      (
+        SELECT
+          *
+        FROM
+          `hot-or-not-feed-intelligence.yral_ds.video_object_table`
+        WHERE
+          uri IN ( SELECT gcs_video_id FROM `hot-or-not-feed-intelligence.yral_ds.video_nsfw` )
+          AND uri NOT IN ( SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings` )
+        LIMIT
+          10000
+      ),
+      STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
+    )
+)
+
 SELECT
-  *
-FROM ML.GENERATE_EMBEDDING(
-  MODEL `hot-or-not-feed-intelligence.yral_ds.mm_embed`,
-  (SELECT * FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` WHERE uri NOT IN (SELECT uri FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings`) LIMIT 10000),
-  STRUCT(TRUE AS flatten_json_output, 10 AS interval_seconds)
-);
+  embedding_table.*,
+  is_nsfw,
+  nsfw_ec,
+  nsfw_gore
+FROM
+  embedding_table
+INNER JOIN
+  `hot-or-not-feed-intelligence.yral_ds.video_nsfw` AS video_nsfw
+ON
+  embedding_table.uri = video_nsfw.gcs_video_id
 """
+
 incremental_update_query = """
 MERGE INTO `hot-or-not-feed-intelligence.yral_ds.video_index` AS vi
 USING (
@@ -37,19 +123,22 @@ USING (
     (SELECT value FROM UNNEST(metadata) WHERE name = 'post_id') AS post_id,
     (SELECT value FROM UNNEST(metadata) WHERE name = 'timestamp') AS timestamp,
     (SELECT value FROM UNNEST(metadata) WHERE name = 'canister_id') AS canister_id,
+    nsfw_ec, 
+    nsfw_gore,
+    is_nsfw,
     ml_generate_embedding_result as embedding
   FROM
     `hot-or-not-feed-intelligence.yral_ds.video_embeddings`
   WHERE
     ARRAY_LENGTH(ml_generate_embedding_result) = 1408
-    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'timestamp')
+    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'timestamp') -- we want  timestamp, post_id, canister_id, nsfw_ec, nsfw_gore and is_nsfw to be present in the metadata
     AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'post_id')
     AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'canister_id')
 ) AS ve
 ON vi.uri = ve.uri
 WHEN NOT MATCHED THEN
-  INSERT (uri, post_id, timestamp, canister_id, embedding)
-  VALUES (ve.uri, ve.post_id, ve.timestamp, ve.canister_id, ve.embedding)
+  INSERT (uri, post_id, timestamp, canister_id, embedding, nsfw_ec, nsfw_gore, is_nsfw)
+  VALUES (ve.uri, ve.post_id, ve.timestamp, ve.canister_id, ve.embedding, ve.nsfw_ec, ve.nsfw_gore, ve.is_nsfw)
 """
 
 with DAG(
