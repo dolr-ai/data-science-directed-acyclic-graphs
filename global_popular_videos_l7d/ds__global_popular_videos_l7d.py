@@ -21,6 +21,7 @@ def send_alert_to_google_chat():
 
 
 query = """
+
 CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.global_popular_videos_l7d` AS
 WITH stats AS (
     SELECT 
@@ -62,16 +63,25 @@ offset_stats AS (
         LEAST(normalized_like_perc, normalized_watch_perc) AS min_normalized_perc
     FROM
         normalized_stats
+), 
+popular_videos AS (
+    SELECT
+        video_id,
+        normalized_like_perc - min_normalized_perc + 1 as normalized_like_perc_p,
+        normalized_watch_perc - min_normalized_perc + 1 as normalized_watch_perc_p,
+        2 / (1 / (normalized_like_perc - min_normalized_perc + 1 + 1e-9) + 1 / (normalized_watch_perc - min_normalized_perc + 1 + 1e-9)) AS global_popularity_score
+    FROM
+        offset_stats
+    ORDER BY
+        global_popularity_score DESC
 )
-SELECT
-    video_id,
-    normalized_like_perc - min_normalized_perc + 1 as normalized_like_perc_p,
-    normalized_watch_perc - min_normalized_perc + 1 as normalized_watch_perc_p,
-    2 / (1 / (normalized_like_perc - min_normalized_perc + 1 + 1e-9) + 1 / (normalized_watch_perc - min_normalized_perc + 1 + 1e-9)) AS global_popularity_score
-FROM
-    offset_stats
-ORDER BY
-    global_popularity_score DESC
+
+select popular_videos.*, is_nsfw, nsfw_ec, nsfw_gore
+from popular_videos 
+inner join `hot-or-not-feed-intelligence.yral_ds.video_nsfw` as video_nsfw
+on popular_videos.video_id = video_nsfw.video_id
+order by global_popularity_score DESC
+
 """
 
 def create_global_popular_videos_l7d():

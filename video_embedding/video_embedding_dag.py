@@ -76,6 +76,26 @@ WHEN NOT MATCHED BY SOURCE THEN
     
 ```
 
+Video Index recreation query 
+
+```
+
+CREATE OR REPLACE VECTOR INDEX vector_video_index
+ON `hot-or-not-feed-intelligence.yral_ds.video_index`(embedding)
+STORING (uri, post_id, timestamp, canister_id, is_nsfw, nsfw_ec, nsfw_gore)
+OPTIONS (
+  index_type = 'IVF',
+  distance_type = 'cosine'
+);
+
+``` 
+
+```
+
+SELECT table_name, index_name, ddl, coverage_percentage
+FROM `hot-or-not-feed-intelligence.yral_ds.INFORMATION_SCHEMA.VECTOR_INDEXES`;
+
+```
 
 """
 
