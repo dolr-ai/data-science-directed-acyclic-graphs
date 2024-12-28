@@ -41,9 +41,10 @@ WHEN MATCHED THEN
     target.is_nsfw = source.is_nsfw
 WHEN NOT MATCHED BY SOURCE THEN
   UPDATE SET 
-    target.nsfw_ec = "",
-    target.nsfw_gore = "",
-    target.is_nsfw = FALSE;   
+    target.nsfw_ec = "UNKNOWN",
+    target.nsfw_gore = "UNKNOWN",
+    target.is_nsfw = True;   
+    
 ```
 
 
