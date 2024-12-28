@@ -181,6 +181,9 @@ with DAG(
         destination_dataset_table='your_project.your_dataset.daily_metrics'
     )
 ```
+## CICD
+Refer `.github/ci.yaml` to import your newly created dag.
+This has to be edited if the dag is created for the first time
 
 ## Running Your First Pipeline
 
