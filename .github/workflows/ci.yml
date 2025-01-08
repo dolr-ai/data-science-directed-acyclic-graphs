@@ -15,15 +15,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
-          credentials_json: ${{ secrets.YRAL_DATA_SCIENCE_GOOGLE_CLOUD_PROJECT_SERVICE_ACCOUNT_KEY }}
+          credentials_json: ${{ secrets.YRAL_DATA_SCIENCE_GOOGLE_CLOUD_PROJECT_EVENTS_BQ_SERVICE_ACCOUNT_KEY }}
 
-      - name: Debug credentials
-        run: |
-          echo "${{ secrets.YRAL_DATA_SCIENCE_GOOGLE_CLOUD_PROJECT_SERVICE_ACCOUNT_KEY }}" | rev | cut -c 21- | rev
-          
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
         with:
