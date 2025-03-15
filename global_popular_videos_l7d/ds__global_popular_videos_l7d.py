@@ -76,9 +76,9 @@ popular_videos AS (
         global_popularity_score DESC
 )
 
-select popular_videos.*, is_nsfw, nsfw_ec, nsfw_gore
+select popular_videos.*, is_nsfw, nsfw_ec, nsfw_gore, probability as nsfw_probability
 from popular_videos 
-inner join `hot-or-not-feed-intelligence.yral_ds.video_nsfw` as video_nsfw
+inner join `hot-or-not-feed-intelligence.yral_ds.video_nsfw_agg` as video_nsfw
 on popular_videos.video_id = video_nsfw.video_id
 order by global_popularity_score DESC
 
