@@ -97,7 +97,73 @@ SELECT table_name, index_name, ddl, coverage_percentage
 FROM `hot-or-not-feed-intelligence.yral_ds.INFORMATION_SCHEMA.VECTOR_INDEXES`;
 
 ```
+Bring video embeddings table upto-date with video_object_table for publisher_user_id 
 
+```
+MERGE `hot-or-not-feed-intelligence.yral_ds.video_embeddings` AS target
+USING (
+  SELECT 
+    vot.uri,
+    ARRAY_CONCAT(
+      -- Keep existing metadata that's not publisher_user_id
+      ARRAY(
+        SELECT AS STRUCT name, value 
+        FROM UNNEST(ve.metadata) AS existing_meta 
+        WHERE existing_meta.name != 'publisher_user_id'
+      ),
+      -- Add publisher_user_id from video_object_table
+      ARRAY(
+        SELECT AS STRUCT 'publisher_user_id' AS name, publisher_meta.value AS value
+        FROM UNNEST(vot.metadata) AS publisher_meta
+        WHERE publisher_meta.name = 'publisher_user_id'
+        LIMIT 1
+      )
+    ) AS updated_metadata
+  FROM `hot-or-not-feed-intelligence.yral_ds.video_object_table` AS vot
+  INNER JOIN `hot-or-not-feed-intelligence.yral_ds.video_embeddings` AS ve
+    ON vot.uri = ve.uri
+  WHERE 
+    -- Only process rows that don't have publisher_user_id
+    NOT EXISTS (
+      SELECT 1 FROM UNNEST(ve.metadata) AS existing_meta 
+      WHERE existing_meta.name = 'publisher_user_id'
+    )
+    -- And where video_object_table has publisher_user_id
+    AND EXISTS (
+      SELECT 1 FROM UNNEST(vot.metadata) AS publisher_meta 
+      WHERE publisher_meta.name = 'publisher_user_id'
+    )
+) AS source
+ON target.uri = source.uri
+WHEN MATCHED THEN
+  UPDATE SET metadata = source.updated_metadata;
+```
+
+
+
+
+
+
+"""
+
+
+
+"""
+Helper query for cases when publisher_user_id is not present inside the video_embeddings table
+
+```sql
+SELECT count(*) FROM `hot-or-not-feed-intelligence.yral_ds.video_embeddings` as ve
+where   not exists (
+  select 1 from unnest(ve.metadata) as metadata
+  where metadata.name = 'publisher_user_id'
+);
+```
+
+output: 462331 -> before backfill
+output: 14307
+
+total: 468764
+perc still missing: 3.09%
 """
 
 create_embed_query = """
@@ -144,6 +210,7 @@ USING (
     (SELECT value FROM UNNEST(metadata) WHERE name = 'post_id') AS post_id,
     (SELECT value FROM UNNEST(metadata) WHERE name = 'timestamp') AS timestamp,
     (SELECT value FROM UNNEST(metadata) WHERE name = 'canister_id') AS canister_id,
+    (SELECT value FROM UNNEST(metadata) WHERE name = 'publisher_user_id') AS publisher_user_id,
     nsfw_ec, 
     nsfw_gore,
     is_nsfw,
@@ -152,14 +219,15 @@ USING (
     `hot-or-not-feed-intelligence.yral_ds.video_embeddings`
   WHERE
     ARRAY_LENGTH(ml_generate_embedding_result) = 1408
-    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'timestamp') -- we want  timestamp, post_id, canister_id, nsfw_ec, nsfw_gore and is_nsfw to be present in the metadata
+    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'timestamp')
     AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'post_id')
     AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'canister_id')
+    AND EXISTS (SELECT 1 FROM UNNEST(metadata) AS metadata_item WHERE metadata_item.name = 'publisher_user_id')
 ) AS ve
 ON vi.uri = ve.uri
 WHEN NOT MATCHED THEN
-  INSERT (uri, post_id, timestamp, canister_id, embedding, nsfw_ec, nsfw_gore, is_nsfw)
-  VALUES (ve.uri, ve.post_id, ve.timestamp, ve.canister_id, ve.embedding, ve.nsfw_ec, ve.nsfw_gore, ve.is_nsfw)
+  INSERT (uri, post_id, timestamp, canister_id, publisher_user_id, embedding, nsfw_ec, nsfw_gore, is_nsfw)
+  VALUES (ve.uri, ve.post_id, ve.timestamp, ve.canister_id, ve.publisher_user_id, ve.embedding, ve.nsfw_ec, ve.nsfw_gore, ve.is_nsfw)
 """
 
 with DAG(
