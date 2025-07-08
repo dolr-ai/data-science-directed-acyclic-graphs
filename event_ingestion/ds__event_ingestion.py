@@ -15,7 +15,8 @@ import os
 DAG_ID = "event_ingestion_daily"
 PROJECT_ID = "hot-or-not-feed-intelligence"
 REGION = "us-central1"
-CLUSTER_NAME = "event-ingestion-cluster"  # Static name; auto-deleted after 1 h
+# Use execution timestamp to ensure a unique cluster name per DAG run
+CLUSTER_NAME = "event-ingestion-cluster-{{ ts_nodash }}"  # Auto-deleted after 2 h via lifecycle_config
 GCS_BUCKET = "yral-ds-dataproc-bucket"  
 
 # Default args for DAG

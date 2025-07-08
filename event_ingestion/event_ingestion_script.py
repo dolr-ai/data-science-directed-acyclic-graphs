@@ -16,6 +16,8 @@ def main():
 
     # Configuration – adjust project or table names if needed
     project_id = "hot-or-not-feed-intelligence"
+    # BigQuery table identifiers must use a colon between the project ID and the
+    # dataset when the project is explicitly specified ("project:dataset.table").
     source_table = "yral_ds.analytics_events"
     destination_table = "yral_ds.analytics_events_processed"
 
@@ -23,7 +25,7 @@ def main():
         # Read source data from BigQuery
         df = (
             spark.read.format("bigquery")
-            .option("table", f"{project_id}.{source_table}")
+            .option("table", f"{project_id}:{source_table}")
             .load()
         )
 
@@ -42,7 +44,7 @@ def main():
         # Write processed data back to BigQuery, replacing existing data
         (
             latest_df.write.format("bigquery")
-            .option("table", f"{project_id}.{destination_table}")
+            .option("table", f"{project_id}:{destination_table}")
             .mode("overwrite")
             .save()
         )
