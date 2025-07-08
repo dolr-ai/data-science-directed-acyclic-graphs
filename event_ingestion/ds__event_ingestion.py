@@ -56,40 +56,44 @@ def upload_pyspark_script(**kwargs):
 # -----------------------------------------------------------------------------
 # Dataproc cluster configuration (auto-delete after 1 hour)
 # -----------------------------------------------------------------------------
+# The DataprocCreateClusterOperator expects a `cluster_config` dict that maps to the
+# `ClusterConfig` proto message (i.e. it should NOT include `project_id`,
+# `cluster_name`, or `region` – those are provided separately via the operator
+# arguments). See:
+# https://airflow.apache.org/docs/apache-airflow-providers-google/stable/_api/airflow/providers/google/cloud/operators/dataproc/index.html
+
+# NB: We keep the same variable name (`CLUSTER_CONFIG`) because it is referenced
+# later when instantiating the operator.
+
 CLUSTER_CONFIG = {
-    "project_id": PROJECT_ID,
-    "cluster_name": CLUSTER_NAME,
-    "config": {
-        "master_config": {
-            "num_instances": 1,
-            "machine_type_uri": "e2-standard-4",
-            "disk_config": {
-                "boot_disk_type": "pd-standard",
-                "boot_disk_size_gb": 100,
-            },
-        },
-        "worker_config": {
-            "num_instances": 2,
-            "machine_type_uri": "e2-standard-4",
-            "disk_config": {
-                "boot_disk_type": "pd-standard",
-                "boot_disk_size_gb": 100,
-            },
-        },
-        "software_config": {
-            "image_version": "2.0-debian10",
-            "properties": {
-                "spark:spark.jars.packages": (
-                    "com.google.cloud.spark:" "spark-bigquery-with-dependencies_2.12:0.28.0"
-                )
-            },
-        },
-        # Auto-delete the cluster 1 hour (3600 s) after creation regardless of state
-        "lifecycle_config": {
-            "auto_delete_ttl": {"seconds": 2*3600},
+    "master_config": {
+        "num_instances": 1,
+        "machine_type_uri": "e2-standard-4",
+        "disk_config": {
+            "boot_disk_type": "pd-standard",
+            "boot_disk_size_gb": 100,
         },
     },
-    "region": REGION,
+    "worker_config": {
+        "num_instances": 2,
+        "machine_type_uri": "e2-standard-4",
+        "disk_config": {
+            "boot_disk_type": "pd-standard",
+            "boot_disk_size_gb": 100,
+        },
+    },
+    "software_config": {
+        "image_version": "2.0-debian10",
+        "properties": {
+            "spark:spark.jars.packages": (
+                "com.google.cloud.spark:" "spark-bigquery-with-dependencies_2.12:0.28.0"
+            )
+        },
+    },
+    # Auto-delete the cluster 1 hour (3600 s) after creation regardless of state
+    "lifecycle_config": {
+        "auto_delete_ttl": {"seconds": 2 * 3600},
+    },
 }
 
 # -----------------------------------------------------------------------------
