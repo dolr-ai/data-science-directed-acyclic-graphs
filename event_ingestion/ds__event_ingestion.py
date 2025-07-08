@@ -23,7 +23,7 @@ default_args = {
     "owner": "airflow",
     "depends_on_past": False,
     "start_date": days_ago(1),
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=5),
 }
 
@@ -53,17 +53,6 @@ def upload_pyspark_script(**kwargs):
     return gcs_uri
 
 
-# -----------------------------------------------------------------------------
-# Dataproc cluster configuration (auto-delete after 1 hour)
-# -----------------------------------------------------------------------------
-# The DataprocCreateClusterOperator expects a `cluster_config` dict that maps to the
-# `ClusterConfig` proto message (i.e. it should NOT include `project_id`,
-# `cluster_name`, or `region` – those are provided separately via the operator
-# arguments). See:
-# https://airflow.apache.org/docs/apache-airflow-providers-google/stable/_api/airflow/providers/google/cloud/operators/dataproc/index.html
-
-# NB: We keep the same variable name (`CLUSTER_CONFIG`) because it is referenced
-# later when instantiating the operator.
 
 CLUSTER_CONFIG = {
     "master_config": {
