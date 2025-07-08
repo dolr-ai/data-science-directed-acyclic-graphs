@@ -16,7 +16,7 @@ DAG_ID = "event_ingestion_daily"
 PROJECT_ID = "hot-or-not-feed-intelligence"
 REGION = "us-central1"
 CLUSTER_NAME = "event-ingestion-cluster"  # Static name; auto-deleted after 1 h
-GCS_BUCKET = "yral-ds-dataproc-ce-staging"  # Update if needed
+GCS_BUCKET = "yral-ds-dataproc-bucket"  
 
 # Default args for DAG
 default_args = {
@@ -33,6 +33,7 @@ default_args = {
 
 def send_alert_to_google_chat(context):
     """Send a simple failure alert to Google Chat via webhook."""
+    # Place holder
     print(f"DAG {DAG_ID} failed. Task: {context.get('task_instance').task_id}")
 
 
