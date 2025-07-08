@@ -33,7 +33,6 @@ default_args = {
 
 def send_alert_to_google_chat(context):
     """Send a simple failure alert to Google Chat via webhook."""
-    # Webhook URL removed for security
     print(f"DAG {DAG_ID} failed. Task: {context.get('task_instance').task_id}")
 
 
