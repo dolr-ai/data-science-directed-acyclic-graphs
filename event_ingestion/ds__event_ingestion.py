@@ -17,7 +17,7 @@ DAG_ID = "event_ingestion_daily"
 PROJECT_ID = "hot-or-not-feed-intelligence"
 REGION = "us-central1"
 CLUSTER_NAME = "event-ingestion-cluster"  # Static name; auto-deleted after 1 h
-GCS_BUCKET = "yral-ds-dataproc-ce-staging"  # Update if needed
+GCS_BUCKET = "yral-ds-dataproc-bucket"  
 AUTOSCALING_POLICY_ID="dataproc-policy"
 CLUSTER_IDLE_DELETE_TTL=3600
 CLUSTER_AUTO_DELETE_TTL=3600
@@ -28,7 +28,7 @@ default_args = {
     "owner": "airflow",
     "depends_on_past": False,
     "start_date": days_ago(1),
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=5),
 }
 
