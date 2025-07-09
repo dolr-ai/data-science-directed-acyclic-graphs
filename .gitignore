@@ -3,3 +3,4 @@
 requirements.txt
 .venv
 settings.json
+*.md

@@ -8,6 +8,7 @@ from airflow.utils.dates import days_ago
 from datetime import timedelta
 from google.cloud import storage
 import os
+import requests
 
 # -----------------------------------------------------------------------------
 # DAG & GCP configuration
@@ -15,16 +16,19 @@ import os
 DAG_ID = "event_ingestion_daily"
 PROJECT_ID = "hot-or-not-feed-intelligence"
 REGION = "us-central1"
-# Use execution timestamp to ensure a unique cluster name per DAG run
-CLUSTER_NAME = "event-ingestion-cluster-{{ ts_nodash | lower }}"  # Auto-deleted after 2 h via lifecycle_config
-GCS_BUCKET = "yral-ds-dataproc-bucket"  
+CLUSTER_NAME = "event-ingestion-cluster"  # Static name; auto-deleted after 1 h
+GCS_BUCKET = "yral-ds-dataproc-ce-staging"  # Update if needed
+AUTOSCALING_POLICY_ID="dataproc-policy"
+CLUSTER_IDLE_DELETE_TTL=3600
+CLUSTER_AUTO_DELETE_TTL=3600
+
 
 # Default args for DAG
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
     "start_date": days_ago(1),
-    "retries": 0,
+    "retries": 1,
     "retry_delay": timedelta(minutes=5),
 }
 
@@ -34,8 +38,17 @@ default_args = {
 
 def send_alert_to_google_chat(context):
     """Send a simple failure alert to Google Chat via webhook."""
-    # Place holder
-    print(f"DAG {DAG_ID} failed. Task: {context.get('task_instance').task_id}")
+    webhook_url = (
+        "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key="
+        "AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token="
+        "VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
+    )
+    message = {"text": f"DAG {DAG_ID} failed. Task: {context.get('task_instance').task_id}"}
+    try:
+        requests.post(webhook_url, json=message, timeout=10)
+    except Exception as exc:  # noqa: BLE001
+        # Avoid failing callback
+        print(f"Failed to post alert to Google Chat: {exc}")
 
 
 def upload_pyspark_script(**kwargs):
@@ -54,36 +67,43 @@ def upload_pyspark_script(**kwargs):
     return gcs_uri
 
 
-
+# -----------------------------------------------------------------------------
+# Dataproc cluster configuration (auto-delete after 1 hour)
+# -----------------------------------------------------------------------------
 CLUSTER_CONFIG = {
     "master_config": {
         "num_instances": 1,
         "machine_type_uri": "e2-standard-4",
-        "disk_config": {
-            "boot_disk_type": "pd-standard",
-            "boot_disk_size_gb": 100,
-        },
+        "disk_config": {"boot_disk_type": "pd-ssd", "boot_disk_size_gb": 100},
     },
     "worker_config": {
         "num_instances": 2,
         "machine_type_uri": "e2-standard-4",
-        "disk_config": {
-            "boot_disk_type": "pd-standard",
-            "boot_disk_size_gb": 100,
-        },
+        "disk_config": {"boot_disk_type": "pd-ssd", "boot_disk_size_gb": 100},
+    },
+    "secondary_worker_config": {
+        "num_instances": 2,
+        "machine_type_uri": "e2-standard-4",
+        "disk_config": {"boot_disk_type": "pd-ssd", "boot_disk_size_gb": 100},
+    },
+    "autoscaling_config": {
+        "policy_uri": f"projects/{PROJECT_ID}/regions/{REGION}/autoscalingPolicies/{AUTOSCALING_POLICY_ID}"
     },
     "software_config": {
-        "image_version": "2.0-debian10",
+        "image_version": "2.2-ubuntu22",
+        "optional_components": ["JUPYTER"],
         "properties": {
-            "spark:spark.jars.packages": (
-                "com.google.cloud.spark:" "spark-bigquery-with-dependencies_2.12:0.28.0"
-            )
+            "spark:spark.dataproc.enhanced.optimizer.enabled": "true",
+            "spark:spark.dataproc.enhanced.execution.enabled": "true",
         },
     },
-    # Auto-delete the cluster 1 hour (3600 s) after creation regardless of state
     "lifecycle_config": {
-        "auto_delete_ttl": {"seconds": 2 * 3600},
+        "idle_delete_ttl": {"seconds": CLUSTER_IDLE_DELETE_TTL},
+        "auto_delete_ttl": {"seconds": CLUSTER_AUTO_DELETE_TTL},
     },
+    "endpoint_config": {
+        "enable_http_port_access": True  # This enables component gateway
+    }
 }
 
 # -----------------------------------------------------------------------------
