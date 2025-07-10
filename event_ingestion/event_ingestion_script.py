@@ -7,10 +7,9 @@ def main():
     spark = (
         SparkSession.builder
         .appName("AnalyticsEventsIngestion")
-        .config(
-            "spark.jars.packages",
-            "com.google.cloud.spark:spark-bigquery-with-dependencies_2.12:0.28.0",
-        )
+        # The Dataproc image already includes the Spark-BigQuery connector. Adding another
+        # connector JAR duplicates classes and causes provider conflicts, so we avoid
+        # specifying spark.jars.packages here.
         .getOrCreate()
     )
 
@@ -56,4 +55,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+   main() 
