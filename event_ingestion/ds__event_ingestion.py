@@ -16,7 +16,7 @@ import requests
 DAG_ID = "event_ingestion_daily"
 PROJECT_ID = "hot-or-not-feed-intelligence"
 REGION = "us-central1"
-CLUSTER_NAME = "event-ingestion-cluster"  # Static name; auto-deleted after 1 h
+CLUSTER_NAME = "event-ingestion-cluster-{{ ts_nodash }}" 
 GCS_BUCKET = "yral-ds-dataproc-bucket"  
 AUTOSCALING_POLICY_ID="dataproc-policy"
 CLUSTER_IDLE_DELETE_TTL=3600
@@ -38,17 +38,18 @@ default_args = {
 
 def send_alert_to_google_chat(context):
     """Send a simple failure alert to Google Chat via webhook."""
-    webhook_url = (
-        "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key="
-        "AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token="
-        "VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
-    )
-    message = {"text": f"DAG {DAG_ID} failed. Task: {context.get('task_instance').task_id}"}
-    try:
-        requests.post(webhook_url, json=message, timeout=10)
-    except Exception as exc:  # noqa: BLE001
-        # Avoid failing callback
-        print(f"Failed to post alert to Google Chat: {exc}")
+    # webhook_url = (
+    #     "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key="
+    #     "AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token="
+    #     "VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
+    # )
+    # message = {"text": f"DAG {DAG_ID} failed. Task: {context.get('task_instance').task_id}"}
+    # try:
+    #     requests.post(webhook_url, json=message, timeout=10)
+    # except Exception as exc:  # noqa: BLE001
+    #     # Avoid failing callback
+    #     print(f"Failed to post alert to Google Chat: {exc}")
+    print(f"DAG {DAG_ID} failed. Task: {context.get('task_instance').task_id}")
 
 
 def upload_pyspark_script(**kwargs):
@@ -85,6 +86,11 @@ CLUSTER_CONFIG = {
         "num_instances": 2,
         "machine_type_uri": "e2-standard-4",
         "disk_config": {"boot_disk_type": "pd-ssd", "boot_disk_size_gb": 100},
+    },
+    "gce_cluster_config": {
+        "network_uri": "default",
+        "subnetwork_uri": "default", 
+        "internal_ip_only": False  # This enables external IPs
     },
     "autoscaling_config": {
         "policy_uri": f"projects/{PROJECT_ID}/regions/{REGION}/autoscalingPolicies/{AUTOSCALING_POLICY_ID}"
