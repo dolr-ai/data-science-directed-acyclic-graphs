@@ -16,7 +16,7 @@ import requests
 DAG_ID = "event_ingestion_daily"
 PROJECT_ID = "hot-or-not-feed-intelligence"
 REGION = "us-central1"
-CLUSTER_NAME = "event-ingestion-cluster-{{ ts_nodash }}" 
+CLUSTER_NAME = "event-ingestion-cluster-{{ ts_nodash | replace('T', '') }}" 
 GCS_BUCKET = "yral-ds-dataproc-bucket"  
 AUTOSCALING_POLICY_ID="dataproc-policy"
 CLUSTER_IDLE_DELETE_TTL=3600
@@ -89,7 +89,7 @@ CLUSTER_CONFIG = {
     },
     "gce_cluster_config": {
         "network_uri": "default",
-        "subnetwork_uri": "default", 
+        # Removed subnetwork_uri to avoid specifying both network_uri and subnetwork_uri simultaneously
         "internal_ip_only": False  # This enables external IPs
     },
     "autoscaling_config": {
