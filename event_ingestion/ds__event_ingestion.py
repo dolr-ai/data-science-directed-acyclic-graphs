@@ -101,7 +101,7 @@ CLUSTER_CONFIG = {
         "properties": {
             "spark:spark.dataproc.enhanced.optimizer.enabled": "true",
             "spark:spark.dataproc.enhanced.execution.enabled": "true",
-            "spark.datasource.bigquery.temporaryGcsBucket": GCS_BUCKET   # <── NEW
+            "spark:spark.datasource.bigquery.temporaryGcsBucket": GCS_BUCKET   
 
         },
     },
