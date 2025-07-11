@@ -19,8 +19,8 @@ REGION = "us-central1"
 CLUSTER_NAME = "event-ingestion-cluster-daily" 
 GCS_BUCKET = "yral-ds-dataproc-bucket"  
 AUTOSCALING_POLICY_ID="dataproc-policy"
-CLUSTER_IDLE_DELETE_TTL=3600*5 # Change this after debugging is off
-CLUSTER_AUTO_DELETE_TTL=3600*5
+CLUSTER_IDLE_DELETE_TTL=3600*1 # Change this after debugging is off
+CLUSTER_AUTO_DELETE_TTL=3600*1
 
 
 # Default args for DAG
@@ -136,6 +136,7 @@ with DAG(
     schedule_interval="@daily",
     catchup=False,
     max_active_runs=1,
+    is_paused_upon_creation=True,
     tags=["event_ingestion", "dataproc", "pyspark"],
 ) as dag:
 
