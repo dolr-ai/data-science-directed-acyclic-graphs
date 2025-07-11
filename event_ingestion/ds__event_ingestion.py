@@ -16,7 +16,7 @@ import requests
 DAG_ID = "event_ingestion_daily"
 PROJECT_ID = "hot-or-not-feed-intelligence"
 REGION = "us-central1"
-CLUSTER_NAME = "event-ingestion-cluster-{{ ts_nodash | replace('T', '') }}" 
+CLUSTER_NAME = "event-ingestion-cluster-daily" 
 GCS_BUCKET = "yral-ds-dataproc-bucket"  
 AUTOSCALING_POLICY_ID="dataproc-policy"
 CLUSTER_IDLE_DELETE_TTL=3600*5 # Change this after debugging is off
