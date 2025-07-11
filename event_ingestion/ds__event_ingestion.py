@@ -19,8 +19,8 @@ REGION = "us-central1"
 CLUSTER_NAME = "event-ingestion-cluster-{{ ts_nodash | replace('T', '') }}" 
 GCS_BUCKET = "yral-ds-dataproc-bucket"  
 AUTOSCALING_POLICY_ID="dataproc-policy"
-CLUSTER_IDLE_DELETE_TTL=3600
-CLUSTER_AUTO_DELETE_TTL=3600
+CLUSTER_IDLE_DELETE_TTL=3600*5 # Change this after debugging is off
+CLUSTER_AUTO_DELETE_TTL=3600*5
 
 
 # Default args for DAG
@@ -153,6 +153,7 @@ with DAG(
         cluster_config=CLUSTER_CONFIG,
         region=REGION,
         cluster_name=CLUSTER_NAME,
+        use_if_exists=True,
         on_failure_callback=send_alert_to_google_chat,
     )
 
