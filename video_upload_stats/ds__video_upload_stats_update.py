@@ -57,6 +57,7 @@ AS (
             JSON_EXTRACT_SCALAR(data, '$.event_data.user_agent') AS user_agent,
             JSON_EXTRACT_SCALAR(data, '$.event_data.video_id') AS video_id,
             JSON_EXTRACT_SCALAR(data, '$.event_data.visitor_id') AS visitor_id,
+            JSON_EXTRACT_SCALAR(data, '$.event_data.upload_type') AS upload_type,
             PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*S%Ez', JSON_EXTRACT_SCALAR(data, '$.timestamp')) AS timestamp
         FROM `yral_ds.analytics_events`
         WHERE JSON_EXTRACT_SCALAR(data, '$.event_data.event') = 'video_upload_success'
@@ -98,6 +99,7 @@ USING (
             JSON_EXTRACT_SCALAR(data, '$.event_data.user_agent') AS user_agent,
             JSON_EXTRACT_SCALAR(data, '$.event_data.video_id') AS video_id,
             JSON_EXTRACT_SCALAR(data, '$.event_data.visitor_id') AS visitor_id,
+            JSON_EXTRACT_SCALAR(data, '$.event_data.upload_type') AS upload_type,
             PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*S%Ez', JSON_EXTRACT_SCALAR(data, '$.timestamp')) AS timestamp
         FROM `yral_ds.analytics_events`, last_ts
         WHERE JSON_EXTRACT_SCALAR(data, '$.event_data.event') = 'video_upload_success'
