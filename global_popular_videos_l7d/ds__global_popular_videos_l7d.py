@@ -76,7 +76,14 @@ popular_videos AS (
         global_popularity_score DESC
 )
 
-select popular_videos.*, is_nsfw, nsfw_ec, nsfw_gore, probability as nsfw_probability, upload_type
+select
+    popular_videos.*,
+    is_nsfw,
+    nsfw_ec,
+    nsfw_gore,
+    probability as nsfw_probability,
+    upload_type,
+    CASE WHEN bot_content.video_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_bot_uploaded
 from popular_videos
 inner join `hot-or-not-feed-intelligence.yral_ds.video_nsfw_agg` as video_nsfw
 on popular_videos.video_id = video_nsfw.video_id
@@ -86,6 +93,11 @@ left join (
     qualify row_number() over (partition by video_id order by timestamp desc) = 1
 ) as upload_stats
 on popular_videos.video_id = upload_stats.video_id
+left join (
+    select distinct video_id
+    from `hot-or-not-feed-intelligence.yral_ds.bot_uploaded_content`
+) as bot_content
+on popular_videos.video_id = bot_content.video_id
 order by global_popularity_score DESC
 
 """
