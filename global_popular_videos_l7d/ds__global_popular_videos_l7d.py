@@ -50,8 +50,8 @@ stats_with_mean_std AS (
 normalized_stats AS (
     SELECT
         video_id,
-        (like_perc - mean_like_perc) / stddev_like_perc AS normalized_like_perc,
-        (watch_perc - mean_watch_perc) / stddev_watch_perc AS normalized_watch_perc
+        COALESCE((like_perc - mean_like_perc) / NULLIF(stddev_like_perc, 0), 0) AS normalized_like_perc,
+        COALESCE((watch_perc - mean_watch_perc) / NULLIF(stddev_watch_perc, 0), 0) AS normalized_watch_perc
     FROM
         stats_with_mean_std
 ),
@@ -83,7 +83,8 @@ select
     nsfw_gore,
     probability as nsfw_probability,
     upload_type,
-    CASE WHEN bot_content.video_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_bot_uploaded
+    CASE WHEN bot_content.video_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_bot_uploaded,
+    CASE WHEN approved_ai_content.video_id IS NOT NULL THEN TRUE ELSE FALSE END AS user_uploaded_ai_content
 from popular_videos
 inner join `hot-or-not-feed-intelligence.yral_ds.video_nsfw_agg` as video_nsfw
 on popular_videos.video_id = video_nsfw.video_id
@@ -98,8 +99,13 @@ left join (
     from `hot-or-not-feed-intelligence.yral_ds.bot_uploaded_content`
 ) as bot_content
 on popular_videos.video_id = bot_content.video_id
+left join (
+    select distinct video_id
+    from `hot-or-not-feed-intelligence.yral_ds.ugc_content_approval`
+    where is_approved = TRUE
+) as approved_ai_content
+on popular_videos.video_id = approved_ai_content.video_id
 order by global_popularity_score DESC
-
 """
 
 def create_global_popular_videos_l7d():
