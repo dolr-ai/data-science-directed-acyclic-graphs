@@ -25,7 +25,7 @@ services:
       bash -c "
       export AIRFLOW__DATABASE__CHECK_MIGRATIONS=False &&
       pip install --no-cache-dir -r /opt/airflow/dags/requirements.txt &&
-      airflow db migrate &&
+      if [ ! -s /opt/airflow/airflow-data/airflow.db ]; then airflow db init; fi &&
       airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@yral.com 2>/dev/null || true &&
       airflow scheduler & airflow webserver
       "
