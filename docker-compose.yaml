@@ -17,6 +17,22 @@ services:
       timeout: 5s
       retries: 5
 
+  airflow-init:
+    image: apache/airflow:2.8.0-python3.11
+    container_name: airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@yral.com || true
+      "
+    restart: "no"
+
   airflow:
     image: apache/airflow:2.8.0-python3.11
     container_name: airflow-standalone
@@ -24,6 +40,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -41,13 +59,7 @@ services:
       - "8080:8080"
     command: >
       bash -c "
-      echo 'Starting Airflow initialization...' &&
-      airflow db migrate 2>&1 | tee /tmp/db-migrate.log &&
-      echo 'Database migration complete' &&
       pip install --no-cache-dir -r /opt/airflow/dags/requirements.txt &&
-      echo 'Requirements installed' &&
-      airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@yral.com 2>/dev/null || true &&
-      echo 'Admin user created' &&
       airflow scheduler & airflow webserver
       "
     healthcheck:
