@@ -31,7 +31,8 @@ services:
     command: >
       bash -c "
       airflow db migrate &&
-      airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@yral.com || true
+      airflow users delete -u admin 2>/dev/null || true &&
+      airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@yral.com
       "
     restart: "no"
 
