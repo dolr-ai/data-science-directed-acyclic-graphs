@@ -1,0 +1,10 @@
+.git/
+.github/
+.gitignore
+.venv/
+*.ipynb
+*.md
+.DS_Store
+settings.json
+airflow-data/
+gcp-key.json
