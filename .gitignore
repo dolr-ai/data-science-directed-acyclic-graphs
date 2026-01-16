@@ -1,6 +1,8 @@
 .DS_Store
 *.ipynb
-requirements.txt
 .venv
 settings.json
 *.md
+gcp-key.json
+airflow-data/
+.env

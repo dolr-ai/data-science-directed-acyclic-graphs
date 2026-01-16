@@ -1,110 +1,62 @@
-name: CI
+name: Deploy to Airflow-1
 
 on:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
+      - self-hosted-airflow
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
-        with:
-          credentials_json: ${{ secrets.YRAL_DATA_SCIENCE_GOOGLE_CLOUD_PROJECT_EVENTS_BQ_SERVICE_ACCOUNT_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          version: "latest"
-
-      - name: Import DAGs to Cloud Composer
+      - name: Setup SSH Key
         run: |
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./demo_spark_run/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./event_count_update/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./event_ingestion/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./video_embedding/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./user_video_relation/
-          gcloud composer environments storage dags import \
-          --environment data-pipeline-orchestrator \
-          --location us-central1 \
-          --source ./user_base_facts/
-          gcloud composer environments storage dags import \
-          --environment data-pipeline-orchestrator \
-          --location us-central1 \
-          --source ./global_popular_videos_l7d/
-          gcloud composer environments storage dags import \
-          --environment data-pipeline-orchestrator \
-          --location us-central1 \
-          --source ./global_popular_videos_l90d/
-          gcloud composer environments storage dags import \
-          --environment data-pipeline-orchestrator \
-          --location us-central1 \
-          --source ./local_popular_videos_l90d/
-          gcloud composer environments storage dags import \
-          --environment data-pipeline-orchestrator \
-          --location us-central1 \
-          --source ./local_popular_videos_l7d/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./gcs_to_bigquery_metadata/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./user_video_metrics/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./video_statistics/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./global_video_stats/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./normalized_video_statistics/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./video_upload_stats/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./bot_uploaded_content/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./ai_ugc/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./region_popular_videos_l7d/
-          gcloud composer environments storage dags import \
-            --environment data-pipeline-orchestrator \
-            --location us-central1 \
-            --source ./follower_graph/
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_BARE_METAL_GITHUB_ACTIONS_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 138.201.128.108 >> ~/.ssh/known_hosts
+
+      - name: Deploy to airflow-1
+        run: |
+          ssh -i ~/.ssh/id_rsa root@138.201.128.108 << 'EOF'
+            set -e
+            
+            cd /root/data-science-directed-acyclic-graphs || exit 1
+            
+            echo "Pulling latest changes..."
+            git fetch origin
+            git reset --hard origin/main
+            
+            echo "Creating GCP credentials file..."
+            echo '${{ secrets.YRAL_DATA_SCIENCE_GOOGLE_CLOUD_PROJECT_EVENTS_BQ_SERVICE_ACCOUNT_KEY }}' > gcp-key.json
+            chmod 600 gcp-key.json
+            
+            echo "Exporting environment variables..."
+            export AIRFLOW_ADMIN_PASSWORD='${{ secrets.AIRFLOW_ADMIN_PASSWORD }}'
+            
+            echo "Restarting Airflow..."
+            docker compose down
+            docker compose up -d
+            
+            echo "Deployment complete!"
+          EOF
+
+      - name: Wait for services
+        run: sleep 30
+
+      - name: Verify deployment
+        run: |
+          ssh -i ~/.ssh/id_rsa root@138.201.128.108 << 'EOF'
+            docker ps
+            echo "Checking Airflow health..."
+            curl -f http://localhost:8080/health || echo "Airflow not yet ready"
+          EOF
+
+      - name: Check HTTPS endpoint
+        run: |
+          echo "Checking https://airflow-1.yral.com/health..."
+          curl -f https://airflow-1.yral.com/health || echo "HTTPS endpoint not yet ready (DNS/TLS may need time)"

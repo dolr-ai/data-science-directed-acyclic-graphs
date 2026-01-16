@@ -1,0 +1,10 @@
+airflow-1.yral.com {
+    reverse_proxy airflow:8080
+    
+    encode gzip
+    
+    log {
+        output stdout
+        format json
+    }
+}
