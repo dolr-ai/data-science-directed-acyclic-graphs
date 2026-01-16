@@ -41,9 +41,8 @@ services:
       - "8080:8080"
     command: >
       bash -c "
-      set -e &&
       echo 'Starting Airflow initialization...' &&
-      airflow db migrate &&
+      airflow db migrate 2>&1 | tee /tmp/db-migrate.log &&
       echo 'Database migration complete' &&
       pip install --no-cache-dir -r /opt/airflow/dags/requirements.txt &&
       echo 'Requirements installed' &&
