@@ -27,10 +27,11 @@ services:
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD:-admin}
     command: >
       bash -c "
       airflow db migrate &&
-      airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@yral.com || true
+      airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@yral.com || true
       "
     restart: "no"
 

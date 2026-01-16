@@ -36,8 +36,9 @@ jobs:
             echo '${{ secrets.YRAL_DATA_SCIENCE_GOOGLE_CLOUD_PROJECT_EVENTS_BQ_SERVICE_ACCOUNT_KEY }}' > gcp-key.json
             chmod 600 gcp-key.json
             
-            echo "Exporting environment variables..."
-            export AIRFLOW_ADMIN_PASSWORD='${{ secrets.AIRFLOW_ADMIN_PASSWORD }}'
+            echo "Creating .env file..."
+            echo "AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}" > .env
+            chmod 600 .env
             
             echo "Restarting Airflow..."
             docker compose down
