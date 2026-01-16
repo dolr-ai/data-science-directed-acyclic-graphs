@@ -41,7 +41,7 @@ services:
       - "8080:8080"
     command: >
       bash -c "
-      pip install --no-cache-dir -r /opt/airflow/dags/requirements.txt &&
+      pip install --no-cache-dir -r /opt/airflow/dags/requirements.txt 2>&1 | grep -v 'You need to initialize the database' &&
       airflow db init &&
       airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@yral.com 2>/dev/null || true &&
       airflow scheduler & airflow webserver
