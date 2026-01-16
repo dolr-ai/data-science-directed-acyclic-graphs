@@ -1,13 +1,32 @@
 version: "3.8"
 
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: airflow-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   airflow:
     image: apache/airflow:2.8.0-python3.11
     container_name: airflow-standalone
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow-data/airflow.db
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=False
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS=False
@@ -15,17 +34,15 @@ services:
       - AIRFLOW__WEBSERVER__SECRET_KEY=airflow_secret_key_change_in_production
       - GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/gcp-key.json
       - GCP_PROJECT_ID=hot-or-not-feed-intelligence
-      - AIRFLOW__DATABASE__CHECK_MIGRATIONS=False
     volumes:
       - ./:/opt/airflow/dags
-      - ./airflow-data:/opt/airflow/airflow-data
       - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
     ports:
       - "8080:8080"
     command: >
       bash -c "
       pip install --no-cache-dir -r /opt/airflow/dags/requirements.txt &&
-      if [ ! -s /opt/airflow/airflow-data/airflow.db ]; then airflow db init; fi &&
+      airflow db migrate &&
       airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@yral.com 2>/dev/null || true &&
       airflow scheduler & airflow webserver
       "
@@ -52,5 +69,6 @@ services:
       - airflow
 
 volumes:
+  postgres_data:
   caddy_data:
   caddy_config:
