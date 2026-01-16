@@ -3,7 +3,7 @@ name: Deploy to Airflow-1
 on:
   push:
     branches:
-      - self-hosted-airflow
+      - main
 
 jobs:
   deploy:
@@ -29,8 +29,8 @@ jobs:
             
             echo "Pulling latest changes..."
             git fetch origin
-            git checkout self-hosted-airflow
-            git reset --hard origin/self-hosted-airflow
+            git checkout main
+            git reset --hard origin/main
             
             echo "Creating GCP credentials file..."
             echo '${{ secrets.YRAL_DATA_SCIENCE_GOOGLE_CLOUD_PROJECT_EVENTS_BQ_SERVICE_ACCOUNT_KEY }}' > gcp-key.json
