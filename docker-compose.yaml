@@ -41,9 +41,14 @@ services:
       - "8080:8080"
     command: >
       bash -c "
+      set -e &&
+      echo 'Starting Airflow initialization...' &&
       airflow db migrate &&
+      echo 'Database migration complete' &&
       pip install --no-cache-dir -r /opt/airflow/dags/requirements.txt &&
+      echo 'Requirements installed' &&
       airflow users create --username admin --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@yral.com 2>/dev/null || true &&
+      echo 'Admin user created' &&
       airflow scheduler & airflow webserver
       "
     healthcheck:
