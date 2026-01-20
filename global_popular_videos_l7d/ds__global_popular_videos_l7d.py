@@ -24,15 +24,16 @@ query = """
 
 CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.global_popular_videos_l7d` AS
 WITH stats AS (
-    SELECT 
+    SELECT
         video_id,
         AVG(CAST(liked AS INT64)) AS like_perc,
-        AVG(mean_percentage_watched) AS watch_perc
-    FROM 
+        AVG(mean_percentage_watched) AS watch_perc,
+        COUNT(*) AS total_interactions
+    FROM
         `hot-or-not-feed-intelligence.yral_ds.userVideoRelation`
-    WHERE 
+    WHERE
         last_watched_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
-    GROUP BY 
+    GROUP BY
         video_id
 ),
 stats_with_mean_std AS (
@@ -40,10 +41,11 @@ stats_with_mean_std AS (
         video_id,
         like_perc,
         watch_perc,
-        AVG(like_perc) OVER() AS mean_like_perc, -- global mean like_perc
-        STDDEV(like_perc) OVER() AS stddev_like_perc, -- global stddev like_perc
-        AVG(watch_perc) OVER() AS mean_watch_perc, -- global mean watch_perc
-        STDDEV(watch_perc) OVER() AS stddev_watch_perc -- global stddev watch_perc
+        total_interactions,
+        AVG(like_perc) OVER() AS mean_like_perc,
+        STDDEV(like_perc) OVER() AS stddev_like_perc,
+        AVG(watch_perc) OVER() AS mean_watch_perc,
+        STDDEV(watch_perc) OVER() AS stddev_watch_perc
     FROM
         stats
 ),
