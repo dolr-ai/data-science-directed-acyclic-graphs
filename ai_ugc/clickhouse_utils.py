@@ -1,0 +1,62 @@
+"""
+ClickHouse write utility for Airflow DAGs.
+Copied into each DAG folder to avoid cross-folder import assumptions.
+"""
+
+import datetime
+import logging
+from typing import Dict, List, Optional
+
+import clickhouse_connect
+from airflow.hooks.base import BaseHook
+
+logger = logging.getLogger(__name__)
+
+
+def get_clickhouse_client():
+    """Create a ClickHouse client from the Airflow connection."""
+    conn = BaseHook.get_connection("clickhouse_yral_prod")
+    return clickhouse_connect.get_client(
+        host=conn.host,
+        port=int(conn.port) if conn.port else 9440,
+        username=conn.login,
+        password=conn.password,
+        database=conn.schema or "yral",
+        secure=True,
+        verify=False,
+    )
+
+
+def clickhouse_table_row_count(table: str, client=None) -> int:
+    """Return the current row count for a ClickHouse table."""
+    _client = client or get_clickhouse_client()
+    result = _client.query("SELECT count() FROM yral.{table}".format(table=table))
+    return int(result.result_rows[0][0])
+
+
+def add_updated_at(rows: List[Dict]) -> List[Dict]:
+    """Add the ReplacingMergeTree version column to each row."""
+    ts = datetime.datetime.utcnow()
+    for row in rows:
+        row["_updated_at"] = ts
+    return rows
+
+
+def clickhouse_insert(table: str, data: List[Dict], client: Optional[object] = None) -> int:
+    """Bulk insert a list of dicts into ClickHouse."""
+    if not data:
+        logger.warning("clickhouse_insert: empty data for table %s", table)
+        return 0
+
+    _client = client or get_clickhouse_client()
+    columns = list(data[0].keys())
+    rows = [list(row.values()) for row in data]
+
+    _client.insert(
+        table="yral.{table}".format(table=table),
+        data=rows,
+        column_names=columns,
+    )
+    logger.info("clickhouse_insert: inserted %s rows into yral.%s", len(rows), table)
+    return len(rows)
+

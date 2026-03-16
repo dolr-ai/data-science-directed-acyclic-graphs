@@ -3,7 +3,16 @@ from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
 from datetime import timedelta
 from google.cloud import bigquery
+import logging
 import requests
+
+from follower_graph.clickhouse_utils import (
+    add_updated_at,
+    clickhouse_insert,
+    clickhouse_table_row_count,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def send_alert_to_google_chat():
@@ -165,6 +174,35 @@ def run_query():
     print(f"Query completed successfully. Job ID: {query_job.job_id}")
 
 
+def sync_to_clickhouse():
+    """Sync recently written follower graph rows from BigQuery to ClickHouse."""
+    try:
+        if clickhouse_table_row_count("follower_graph") == 0:
+            raise RuntimeError(
+                "ClickHouse bootstrap missing for yral.follower_graph; "
+                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
+            )
+
+        client = bigquery.Client()
+        rows_iter = client.query(
+            """
+            SELECT follower_id, following_id, active, last_updated_timestamp
+            FROM `hot-or-not-feed-intelligence.yral_ds.follower_graph`
+            WHERE last_updated_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 15 MINUTE)
+            """
+        ).result()
+        data = add_updated_at([dict(row) for row in rows_iter])
+        if not data:
+            logger.info("follower_graph: no recent rows to sync")
+            return
+
+        inserted = clickhouse_insert(table="follower_graph", data=data)
+        logger.info("follower_graph: synced %s rows to ClickHouse", inserted)
+    except Exception:
+        logger.exception("ClickHouse sync failed for follower_graph")
+        raise
+
+
 default_args = {
     'owner': 'airflow',
     'start_date': days_ago(1),
@@ -186,6 +224,13 @@ with DAG(
         python_callable=run_query,
         on_failure_callback=send_alert_to_google_chat
     )
+
+    sync_ch_task = PythonOperator(
+        task_id='sync_to_clickhouse',
+        python_callable=sync_to_clickhouse,
+    )
+
+    run_query_task >> sync_ch_task
 
 
 if __name__ == "__main__":

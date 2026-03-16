@@ -4,7 +4,16 @@ from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
 from datetime import datetime
 from google.cloud import bigquery
+import logging
 import requests
+
+from video_statistics.clickhouse_utils import (
+    add_updated_at,
+    clickhouse_insert,
+    clickhouse_table_row_count,
+)
+
+logger = logging.getLogger(__name__)
 
 def send_alert_to_google_chat():
     webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
@@ -122,6 +131,41 @@ def run_query():
     query_job = client.query(query)
     query_job.result()
 
+
+def sync_to_clickhouse():
+    """Sync recently written video statistics rows from BigQuery to ClickHouse."""
+    try:
+        if clickhouse_table_row_count("video_statistics") == 0:
+            raise RuntimeError(
+                "ClickHouse bootstrap missing for yral.video_statistics; "
+                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
+            )
+
+        client = bigquery.Client()
+        rows_iter = client.query(
+            """
+            SELECT
+                video_id,
+                user_normalized_like_perc,
+                user_normalized_share_perc,
+                user_normalized_watch_percentage_perc,
+                total_impressions,
+                last_update_timestamp
+            FROM `hot-or-not-feed-intelligence.yral_ds.video_statistics`
+            WHERE last_update_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+            """
+        ).result()
+        data = add_updated_at([dict(row) for row in rows_iter])
+        if not data:
+            logger.info("video_statistics: no recent rows to sync")
+            return
+
+        inserted = clickhouse_insert(table="video_statistics", data=data)
+        logger.info("video_statistics: synced %s rows to ClickHouse", inserted)
+    except Exception:
+        logger.exception("ClickHouse sync failed for video_statistics")
+        raise
+
 default_args = {
     'owner': 'airflow',
     'start_date': days_ago(1),
@@ -134,3 +178,10 @@ with DAG('video_statistics', default_args=default_args, schedule_interval='*/35 
         python_callable=run_query,
         on_failure_callback=send_alert_to_google_chat
     )
+
+    sync_ch_task = PythonOperator(
+        task_id='sync_to_clickhouse',
+        python_callable=sync_to_clickhouse,
+    )
+
+    run_query_task >> sync_ch_task

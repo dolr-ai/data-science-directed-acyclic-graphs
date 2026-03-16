@@ -13,7 +13,16 @@ from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
 from datetime import timedelta
 from google.cloud import bigquery
+import logging
 import requests
+
+from reported_nsfw_videos.clickhouse_utils import (
+    add_updated_at,
+    clickhouse_insert,
+    clickhouse_table_row_count,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def send_alert_to_google_chat():
@@ -219,6 +228,35 @@ def update_excluded_videos():
     print(f"Query completed successfully. Job ID: {query_job.job_id}")
 
 
+def sync_to_clickhouse():
+    """Sync recently written excluded video rows from BigQuery to ClickHouse."""
+    try:
+        if clickhouse_table_row_count("excluded_videos") == 0:
+            raise RuntimeError(
+                "ClickHouse bootstrap missing for yral.excluded_videos; "
+                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
+            )
+
+        client = bigquery.Client()
+        rows_iter = client.query(
+            """
+            SELECT video_id, excluded_at, exclusion_reason
+            FROM `hot-or-not-feed-intelligence.yral_ds.excluded_videos`
+            WHERE excluded_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+            """
+        ).result()
+        data = add_updated_at([dict(row) for row in rows_iter])
+        if not data:
+            logger.info("excluded_videos: no recent rows to sync")
+            return
+
+        inserted = clickhouse_insert(table="excluded_videos", data=data)
+        logger.info("excluded_videos: synced %s rows to ClickHouse", inserted)
+    except Exception:
+        logger.exception("ClickHouse sync failed for excluded_videos")
+        raise
+
+
 default_args = {
     'owner': 'airflow',
     'start_date': days_ago(1),
@@ -240,6 +278,13 @@ with DAG(
         python_callable=update_excluded_videos,
         on_failure_callback=send_alert_to_google_chat
     )
+
+    sync_ch_task = PythonOperator(
+        task_id='sync_to_clickhouse',
+        python_callable=sync_to_clickhouse,
+    )
+
+    run_query_task >> sync_ch_task
 
 
 if __name__ == "__main__":
