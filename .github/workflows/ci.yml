@@ -26,19 +26,6 @@ jobs:
         with:
           version: "latest"
 
-      - name: Install clickhouse-connect in Cloud Composer
-        run: |
-          CLICKHOUSE_CONNECT_VERSION="$(gcloud composer environments describe data-pipeline-orchestrator \
-            --location us-central1 \
-            --format="value(config.softwareConfig.pypiPackages.clickhouse-connect)")"
-          if [ -n "$CLICKHOUSE_CONNECT_VERSION" ]; then
-            echo "clickhouse-connect already configured in Composer, skipping"
-          else
-            gcloud composer environments update data-pipeline-orchestrator \
-              --location us-central1 \
-              --update-pypi-package 'clickhouse-connect>=0.7.0'
-          fi
-
       - name: Register ClickHouse connection in Cloud Composer
         run: |
           gcloud composer environments run data-pipeline-orchestrator \
