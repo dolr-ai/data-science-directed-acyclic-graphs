@@ -4,7 +4,15 @@ from airflow.utils.dates import days_ago
 from datetime import timedelta
 from datetime import datetime
 from google.cloud import bigquery
+import logging
 import requests
+
+from global_popular_videos_l7d.clickhouse_utils import (
+    clickhouse_insert,
+    get_clickhouse_client,
+)
+
+logger = logging.getLogger(__name__)
 
 default_args = {
     'owner': 'airflow',
@@ -115,9 +123,56 @@ def create_global_popular_videos_l7d():
     query_job = client.query(query)
     query_job.result()
 
+
+def sync_to_clickhouse():
+    """Rebuild the ClickHouse global popularity table from BigQuery."""
+    try:
+        client = bigquery.Client()
+        rows_iter = client.query(
+            """
+            SELECT
+                video_id,
+                normalized_like_perc_p,
+                normalized_watch_perc_p,
+                global_popularity_score,
+                is_nsfw,
+                nsfw_ec,
+                nsfw_gore,
+                nsfw_probability,
+                upload_type,
+                is_bot_uploaded,
+                user_uploaded_ai_content
+            FROM `hot-or-not-feed-intelligence.yral_ds.global_popular_videos_l7d`
+            """
+        ).result()
+        data = [dict(row) for row in rows_iter]
+        ch_client = get_clickhouse_client()
+        ch_client.command("TRUNCATE TABLE yral.global_popular_videos_l7d")
+
+        if not data:
+            logger.info("global_popular_videos_l7d: truncated ClickHouse table; no rows to insert")
+            return
+
+        inserted = clickhouse_insert(
+            table="global_popular_videos_l7d",
+            data=data,
+            client=ch_client,
+        )
+        logger.info("global_popular_videos_l7d: rebuilt %s rows in ClickHouse", inserted)
+    except Exception:
+        logger.exception("ClickHouse sync failed for global_popular_videos_l7d")
+        raise
+
 with DAG('global_popular_videos_l7d', default_args=default_args, schedule_interval='10 0 * * *', catchup=False) as dag:
     run_query_task = PythonOperator(
         task_id='run_query_task',
         python_callable=create_global_popular_videos_l7d,
         on_failure_callback=send_alert_to_google_chat
     )
+
+    sync_ch_task = PythonOperator(
+        task_id='sync_to_clickhouse',
+        python_callable=sync_to_clickhouse,
+    )
+
+    run_query_task >> sync_ch_task

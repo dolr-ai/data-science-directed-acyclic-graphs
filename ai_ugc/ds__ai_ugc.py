@@ -3,7 +3,16 @@ from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
 from datetime import timedelta
 from google.cloud import bigquery
+import logging
 import requests
+
+from ai_ugc.clickhouse_utils import (
+    add_updated_at,
+    clickhouse_insert,
+    clickhouse_table_row_count,
+)
+
+logger = logging.getLogger(__name__)
 
 def send_alert_to_google_chat():
     """Sends failure alert to Google Chat webhook.
@@ -255,6 +264,50 @@ def update_ai_ugc():
     query_job.result()
     print(f"Query completed successfully. Job ID: {query_job.job_id}")
 
+
+def sync_to_clickhouse():
+    """Sync recently written ai_ugc rows from BigQuery to ClickHouse."""
+    try:
+        if clickhouse_table_row_count("ai_ugc") == 0:
+            raise RuntimeError(
+                "ClickHouse bootstrap missing for yral.ai_ugc; "
+                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
+            )
+
+        client = bigquery.Client()
+        rows_iter = client.query(
+            """
+            SELECT
+                video_id,
+                publisher_user_id,
+                user_id,
+                ai_canister_id,
+                event_timestamp_str,
+                publish_time,
+                received_timestamp,
+                TO_JSON_STRING(event_json_data) AS event_json_data,
+                event_type,
+                type_ext,
+                upload_timestamp,
+                post_id,
+                upload_canister_id,
+                country,
+                display_name
+            FROM `hot-or-not-feed-intelligence.yral_ds.ai_ugc`
+            WHERE upload_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+            """
+        ).result()
+        data = add_updated_at([dict(row) for row in rows_iter])
+        if not data:
+            logger.info("ai_ugc: no recent rows to sync")
+            return
+
+        inserted = clickhouse_insert(table="ai_ugc", data=data)
+        logger.info("ai_ugc: synced %s rows to ClickHouse", inserted)
+    except Exception:
+        logger.exception("ClickHouse sync failed for ai_ugc")
+        raise
+
 default_args = {
     'owner': 'airflow',
     'start_date': days_ago(1),
@@ -276,6 +329,13 @@ with DAG(
         python_callable=update_ai_ugc,
         on_failure_callback=send_alert_to_google_chat
     )
+
+    sync_ch_task = PythonOperator(
+        task_id='sync_to_clickhouse',
+        python_callable=sync_to_clickhouse,
+    )
+
+    run_query_task >> sync_ch_task
 
 if __name__ == "__main__":
     # Test execution locally

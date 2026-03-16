@@ -3,7 +3,16 @@ from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
 from datetime import timedelta
 from google.cloud import bigquery
+import logging
 import requests
+
+from bot_uploaded_content.clickhouse_utils import (
+    add_updated_at,
+    clickhouse_insert,
+    clickhouse_table_row_count,
+)
+
+logger = logging.getLogger(__name__)
 
 def send_alert_to_google_chat():
     """Sends failure alert to Google Chat webhook.
@@ -131,6 +140,43 @@ def update_bot_uploaded_content():
     query_job = client.query(query)
     query_job.result()
 
+
+def sync_to_clickhouse():
+    """Sync recently written bot-uploaded rows from BigQuery to ClickHouse."""
+    try:
+        if clickhouse_table_row_count("bot_uploaded_content") == 0:
+            raise RuntimeError(
+                "ClickHouse bootstrap missing for yral.bot_uploaded_content; "
+                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
+            )
+
+        client = bigquery.Client()
+        rows_iter = client.query(
+            """
+            SELECT
+                user_id,
+                publisher_user_id,
+                canister_id,
+                video_id,
+                post_id,
+                country,
+                display_name,
+                timestamp
+            FROM `hot-or-not-feed-intelligence.yral_ds.bot_uploaded_content`
+            WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 6 HOUR)
+            """
+        ).result()
+        data = add_updated_at([dict(row) for row in rows_iter])
+        if not data:
+            logger.info("bot_uploaded_content: no recent rows to sync")
+            return
+
+        inserted = clickhouse_insert(table="bot_uploaded_content", data=data)
+        logger.info("bot_uploaded_content: synced %s rows to ClickHouse", inserted)
+    except Exception:
+        logger.exception("ClickHouse sync failed for bot_uploaded_content")
+        raise
+
 default_args = {
     'owner': 'airflow',
     'start_date': days_ago(1),
@@ -152,3 +198,10 @@ with DAG(
         python_callable=update_bot_uploaded_content,
         on_failure_callback=send_alert_to_google_chat
     )
+
+    sync_ch_task = PythonOperator(
+        task_id='sync_to_clickhouse',
+        python_callable=sync_to_clickhouse,
+    )
+
+    run_query_task >> sync_ch_task
