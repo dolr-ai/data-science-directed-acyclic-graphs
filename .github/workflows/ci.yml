@@ -30,6 +30,12 @@ jobs:
         run: |
           gcloud composer environments run data-pipeline-orchestrator \
             --location us-central1 \
+            connections delete -- \
+            clickhouse_yral_prod \
+          || true
+
+          gcloud composer environments run data-pipeline-orchestrator \
+            --location us-central1 \
             connections add -- \
             --conn-type 'generic' \
             --conn-host '${{ secrets.CLICKHOUSE_HOST }}' \
@@ -38,8 +44,7 @@ jobs:
             --conn-login '${{ secrets.CLICKHOUSE_USER }}' \
             --conn-password '${{ secrets.CLICKHOUSE_PASSWORD }}' \
             --conn-extra '{"secure": true, "verify": false}' \
-            clickhouse_yral_prod \
-          || echo "Connection already exists, skipping"
+            clickhouse_yral_prod
 
       - name: Import DAGs to Cloud Composer
         run: |
