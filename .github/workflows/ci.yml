@@ -27,6 +27,7 @@ jobs:
           version: "latest"
 
       - name: Register ClickHouse connection in Cloud Composer
+        continue-on-error: true
         run: |
           gcloud composer environments run data-pipeline-orchestrator \
             --location us-central1 \
