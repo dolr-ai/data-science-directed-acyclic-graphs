@@ -20,12 +20,15 @@ default_args = {
     'retries': 1,
 }
 
-def send_alert_to_google_chat():
+def send_alert_to_google_chat(context=None, text=None):
     webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
     message = {
-        "text": f"DAG global_popular_videos_l7d failed."
+        "text": text or "DAG global_popular_videos_l7d failed."
     }
-    requests.post(webhook_url, json=message)
+    try:
+        requests.post(webhook_url, json=message, timeout=10)
+    except Exception:
+        logger.exception("Failed to send Google Chat alert for global_popular_videos_l7d")
 
 
 query = """
@@ -161,7 +164,13 @@ def sync_to_clickhouse():
         logger.info("global_popular_videos_l7d: rebuilt %s rows in ClickHouse", inserted)
     except Exception:
         logger.exception("ClickHouse sync failed for global_popular_videos_l7d")
-        raise
+        send_alert_to_google_chat(
+            text=(
+                "ClickHouse sync failed for global_popular_videos_l7d, but the BigQuery rebuild "
+                "already completed. The DAG run will continue and ClickHouse catch-up is required."
+            )
+        )
+        return
 
 with DAG('global_popular_videos_l7d', default_args=default_args, schedule_interval='10 0 * * *', catchup=False) as dag:
     run_query_task = PythonOperator(

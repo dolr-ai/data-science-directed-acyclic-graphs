@@ -19,13 +19,14 @@ import requests
 from reported_nsfw_videos.clickhouse_utils import (
     add_updated_at,
     clickhouse_insert,
+    clickhouse_max_timestamp_ms,
     clickhouse_table_row_count,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def send_alert_to_google_chat():
+def send_alert_to_google_chat(context=None, text=None):
     """
     Sends failure alert to Google Chat webhook.
 
@@ -34,8 +35,11 @@ def send_alert_to_google_chat():
         2. POST to Google Chat webhook URL
     """
     webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
-    message = {"text": "DAG ds__reported_nsfw_videos (excluded_videos table) failed."}
-    requests.post(webhook_url, json=message)
+    message = {"text": text or "DAG ds__reported_nsfw_videos (excluded_videos table) failed."}
+    try:
+        requests.post(webhook_url, json=message, timeout=10)
+    except Exception:
+        logger.exception("Failed to send Google Chat alert for ds__reported_nsfw_videos")
 
 
 def check_table_exists():
@@ -238,12 +242,25 @@ def sync_to_clickhouse():
             )
 
         client = bigquery.Client()
+        lower_bound_ms = clickhouse_max_timestamp_ms("excluded_videos", "excluded_at")
+        if lower_bound_ms is None:
+            raise RuntimeError("excluded_videos ClickHouse watermark is NULL; bootstrap state is invalid")
+
+        overlap_ms = 2 * 60 * 60 * 1000
+        lower_bound_ms = max(lower_bound_ms - overlap_ms, 0)
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("lower_bound_ms", "INT64", lower_bound_ms),
+            ]
+        )
         rows_iter = client.query(
             """
             SELECT video_id, excluded_at, exclusion_reason
             FROM `hot-or-not-feed-intelligence.yral_ds.excluded_videos`
-            WHERE excluded_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
-            """
+            WHERE excluded_at >= TIMESTAMP_MILLIS(@lower_bound_ms)
+            ORDER BY excluded_at, video_id
+            """,
+            job_config=job_config,
         ).result()
         data = add_updated_at([dict(row) for row in rows_iter])
         if not data:
@@ -254,7 +271,13 @@ def sync_to_clickhouse():
         logger.info("excluded_videos: synced %s rows to ClickHouse", inserted)
     except Exception:
         logger.exception("ClickHouse sync failed for excluded_videos")
-        raise
+        send_alert_to_google_chat(
+            text=(
+                "ClickHouse sync failed for ds__reported_nsfw_videos, but the BigQuery write "
+                "already completed. The DAG run will continue and ClickHouse catch-up is required."
+            )
+        )
+        return
 
 
 default_args = {
