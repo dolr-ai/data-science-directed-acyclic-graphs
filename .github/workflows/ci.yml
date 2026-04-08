@@ -133,3 +133,11 @@ jobs:
             --environment data-pipeline-orchestrator \
             --location us-central1 \
             --source ./reported_nsfw_videos/
+          gcloud composer environments storage dags import \
+            --environment data-pipeline-orchestrator \
+            --location us-central1 \
+            --source ./ugc_content_approval/
+          gcloud composer environments storage dags import \
+            --environment data-pipeline-orchestrator \
+            --location us-central1 \
+            --source ./video_unique_v2/
