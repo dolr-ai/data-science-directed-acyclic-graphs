@@ -1,314 +1,114 @@
 """
-Airflow DAG to maintain the excluded_videos table.
+Retired BigQuery excluded_videos maintenance DAG.
 
-This DAG identifies videos that should be excluded from recommendation feeds:
-    1. REPORTED + NOT CLEAN: Video was reported AND (probability >= 0.4 OR nsfw_ec != 'neutral')
-    2. BANNED: Video has a video_report_banned event (direct exclusion, no NSFW check)
+Manual GChat-approved bans are now written directly by nsfw_detect:
+    1. yral.excluded_videos gets exclusion_reason='banned'
+    2. yral.video_nsfw_agg gets a legacy compatibility NSFW row
 
-Schedule: Every 5 minutes (aligned with feed server exclude set sync)
+This DAG no longer reads analytics BigQuery events, no longer writes BigQuery
+excluded_videos, and no longer syncs that table back to ClickHouse. It remains
+as a manual validation DAG so deploys can confirm the ClickHouse tables required
+by the direct-write path are present.
 """
 
-from airflow import DAG
-from airflow.utils.dates import days_ago
-from airflow.operators.python_operator import PythonOperator
-from datetime import timedelta
-from google.cloud import bigquery
 import logging
-import requests
+from datetime import timedelta
 
-from reported_nsfw_videos.clickhouse_utils import (
-    add_updated_at,
-    clickhouse_insert,
-    clickhouse_max_timestamp_ms,
-    clickhouse_table_row_count,
-)
+import requests
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator
+from airflow.utils.dates import days_ago
+
+from reported_nsfw_videos.clickhouse_utils import clickhouse_scalar, clickhouse_table_row_count
 
 logger = logging.getLogger(__name__)
 
+REQUIRED_COLUMNS = {
+    "excluded_videos": {
+        "video_id",
+        "excluded_at",
+        "exclusion_reason",
+        "_updated_at",
+    },
+    "video_nsfw_agg": {
+        "video_id",
+        "gcs_video_id",
+        "nsfw_ec",
+        "nsfw_gore",
+        "is_nsfw",
+        "probability",
+        "created_at",
+        "updated_at",
+        "_updated_at",
+    },
+}
+
 
 def send_alert_to_google_chat(context=None, text=None):
-    """
-    Sends failure alert to Google Chat webhook.
-
-    Algorithm:
-        1. Construct message payload with DAG name
-        2. POST to Google Chat webhook URL
-    """
+    """Send failure alert to Google Chat webhook."""
+    _ = context
     webhook_url = "https://chat.googleapis.com/v1/spaces/AAAAkUFdZaw/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=VC5HDNQgqVLbhRVQYisn_IO2WUAvrDeRV9_FTizccic"
-    message = {"text": text or "DAG ds__reported_nsfw_videos (excluded_videos table) failed."}
+    message = {"text": text or "DAG ds__reported_nsfw_videos ClickHouse validation failed."}
     try:
         requests.post(webhook_url, json=message, timeout=10)
     except Exception:
         logger.exception("Failed to send Google Chat alert for ds__reported_nsfw_videos")
 
 
-def check_table_exists():
-    """
-    Checks if excluded_videos table exists in BigQuery.
+def _column_exists(table: str, column: str) -> bool:
+    if table not in REQUIRED_COLUMNS or column not in REQUIRED_COLUMNS[table]:
+        raise ValueError(f"unexpected ClickHouse column check: {table}.{column}")
 
-    Algorithm:
-        1. Create BigQuery client
-        2. Query INFORMATION_SCHEMA for table existence
-        3. Return True if exists, False otherwise
-
-    Returns:
-        bool: True if table exists
-    """
-    client = bigquery.Client()
-    query = """
-    SELECT COUNT(*)
-    FROM `hot-or-not-feed-intelligence.yral_ds.INFORMATION_SCHEMA.TABLES`
-    WHERE table_name = 'excluded_videos'
-    """
-    query_job = client.query(query)
-    results = query_job.result()
-    for row in results:
-        return row[0] > 0
-
-
-def create_initial_query():
-    """
-    Creates initial SQL to build excluded_videos table from scratch.
-
-    Algorithm:
-        1. Source 1 - Reported + NSFW videos:
-           a. Parse mp_video_reported events from analytics to get reported video_ids
-           b. Join with video_nsfw_agg to get NSFW scores
-           c. Filter for NOT CLEAN: probability >= 0.4 OR nsfw_ec != 'neutral'
-           d. Deduplicate by video_id (keep earliest report timestamp)
-        2. Source 2 - Banned videos:
-           a. Parse video_report_banned events from analytics
-           b. Direct inclusion without NSFW check
-        3. Combine both sources with UNION DISTINCT
-        4. Partition by DATE(excluded_at) for efficient queries
-        5. Cluster by video_id for fast lookups
-
-    Returns:
-        str: SQL query for initial table creation
-
-    Output schema:
-        - video_id: STRING - The excluded video
-        - excluded_at: TIMESTAMP - When exclusion event occurred
-        - exclusion_reason: STRING - 'reported_nsfw' or 'banned'
-    """
-    return """
-CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.excluded_videos`
-PARTITION BY DATE(excluded_at)
-CLUSTER BY video_id
-AS (
-    -- Source 1: Reported + NSFW videos
-    WITH reported_nsfw AS (
-        SELECT
-            JSON_EXTRACT_SCALAR(params, '$.video_id') as video_id,
-            MIN(timestamp) as excluded_at,
-            'reported_nsfw' as exclusion_reason
-        FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`
-        WHERE event = 'mp_video_reported'
-        AND JSON_EXTRACT_SCALAR(params, '$.video_id') IS NOT NULL
-        GROUP BY 1
-    ),
-    reported_nsfw_filtered AS (
-        SELECT
-            r.video_id,
-            r.excluded_at,
-            r.exclusion_reason
-        FROM reported_nsfw r
-        INNER JOIN `hot-or-not-feed-intelligence.yral_ds.video_nsfw_agg` nsfw
-            ON r.video_id = nsfw.video_id
-        WHERE nsfw.probability >= 0.4 OR nsfw.nsfw_ec != 'neutral'
-    ),
-
-    -- Source 2: Banned videos (direct exclusion)
-    banned AS (
-        SELECT
-            JSON_EXTRACT_SCALAR(params, '$.video_id') as video_id,
-            MIN(timestamp) as excluded_at,
-            'banned' as exclusion_reason
-        FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`
-        WHERE event = 'video_report_banned'
-        AND JSON_EXTRACT_SCALAR(params, '$.video_id') IS NOT NULL
-        GROUP BY 1
+    count = clickhouse_scalar(
+        "SELECT count() FROM system.columns "
+        f"WHERE database = 'yral' AND table = '{table}' AND name = '{column}'"
     )
-
-    -- Combine both sources, dedupe by video_id
-    SELECT video_id, excluded_at, exclusion_reason
-    FROM reported_nsfw_filtered
-
-    UNION DISTINCT
-
-    SELECT video_id, excluded_at, exclusion_reason
-    FROM banned
-)
-"""
+    return int(count or 0) > 0
 
 
-def create_incremental_query():
-    """
-    Creates incremental SQL to merge new excluded videos.
+def validate_clickhouse_manual_ban_tables():
+    """Validate the ClickHouse tables used by nsfw_detect manual-ban writes."""
+    missing = []
+    for table, columns in REQUIRED_COLUMNS.items():
+        row_count = clickhouse_table_row_count(table)
+        logger.info("yral.%s row count: %s", table, row_count)
+        for column in sorted(columns):
+            if not _column_exists(table, column):
+                missing.append(f"yral.{table}.{column}")
 
-    Algorithm:
-        1. Look back 10 minutes for new events (2x the 5-min interval)
-        2. Source 1 - Reported + NSFW:
-           a. Get new mp_video_reported events
-           b. Join with video_nsfw_agg to filter for NOT CLEAN
-        3. Source 2 - Banned:
-           a. Get new video_report_banned events
-        4. Combine sources with UNION DISTINCT
-        5. MERGE into target table on video_id
-        6. Update if matched (refresh exclusion data)
-        7. Insert if not matched
+    if missing:
+        raise RuntimeError(f"missing required ClickHouse columns: {', '.join(missing)}")
 
-    Returns:
-        str: SQL query for incremental updates
-    """
-    return """
-MERGE `hot-or-not-feed-intelligence.yral_ds.excluded_videos` AS target
-USING (
-    -- Look back 10 minutes for new events
-    WITH reported_nsfw AS (
-        SELECT
-            JSON_EXTRACT_SCALAR(params, '$.video_id') as video_id,
-            MIN(timestamp) as excluded_at,
-            'reported_nsfw' as exclusion_reason
-        FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`
-        WHERE event = 'mp_video_reported'
-        AND JSON_EXTRACT_SCALAR(params, '$.video_id') IS NOT NULL
-        AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE)
-        GROUP BY 1
-    ),
-    reported_nsfw_filtered AS (
-        SELECT r.video_id, r.excluded_at, r.exclusion_reason
-        FROM reported_nsfw r
-        INNER JOIN `hot-or-not-feed-intelligence.yral_ds.video_nsfw_agg` nsfw
-            ON r.video_id = nsfw.video_id
-        WHERE nsfw.probability >= 0.4 OR nsfw.nsfw_ec != 'neutral'
-    ),
-    banned AS (
-        SELECT
-            JSON_EXTRACT_SCALAR(params, '$.video_id') as video_id,
-            MIN(timestamp) as excluded_at,
-            'banned' as exclusion_reason
-        FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`
-        WHERE event = 'video_report_banned'
-        AND JSON_EXTRACT_SCALAR(params, '$.video_id') IS NOT NULL
-        AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE)
-        GROUP BY 1
+    banned_count = clickhouse_scalar(
+        "SELECT count() FROM yral.excluded_videos FINAL WHERE exclusion_reason = 'banned'"
     )
-    SELECT * FROM reported_nsfw_filtered
-    UNION DISTINCT
-    SELECT * FROM banned
-) AS source
-ON target.video_id = source.video_id
-WHEN MATCHED THEN
-    UPDATE SET
-        target.exclusion_reason = source.exclusion_reason,
-        target.excluded_at = source.excluded_at
-WHEN NOT MATCHED THEN
-    INSERT (video_id, excluded_at, exclusion_reason)
-    VALUES (source.video_id, source.excluded_at, source.exclusion_reason)
-"""
-
-
-def update_excluded_videos():
-    """
-    Main function to update excluded_videos table.
-
-    Algorithm:
-        1. Check if table exists
-        2. If exists: run incremental query (MERGE new records)
-        3. If not exists: run initial query (CREATE table)
-        4. Execute and wait for completion
-    """
-    if check_table_exists():
-        query = create_incremental_query()
-        print("Running incremental update query...")
-    else:
-        query = create_initial_query()
-        print("Running initial table creation query...")
-
-    client = bigquery.Client()
-    query_job = client.query(query)
-    query_job.result()
-    print(f"Query completed successfully. Job ID: {query_job.job_id}")
-
-
-def sync_to_clickhouse():
-    """Sync recently written excluded video rows from BigQuery to ClickHouse."""
-    try:
-        if clickhouse_table_row_count("excluded_videos") == 0:
-            raise RuntimeError(
-                "ClickHouse bootstrap missing for yral.excluded_videos; "
-                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
-            )
-
-        client = bigquery.Client()
-        lower_bound_ms = clickhouse_max_timestamp_ms("excluded_videos", "excluded_at")
-        if lower_bound_ms is None:
-            raise RuntimeError("excluded_videos ClickHouse watermark is NULL; bootstrap state is invalid")
-
-        overlap_ms = 2 * 60 * 60 * 1000
-        lower_bound_ms = max(lower_bound_ms - overlap_ms, 0)
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("lower_bound_ms", "INT64", lower_bound_ms),
-            ]
-        )
-        rows_iter = client.query(
-            """
-            SELECT video_id, excluded_at, exclusion_reason
-            FROM `hot-or-not-feed-intelligence.yral_ds.excluded_videos`
-            WHERE excluded_at >= TIMESTAMP_MILLIS(@lower_bound_ms)
-            ORDER BY excluded_at, video_id
-            """,
-            job_config=job_config,
-        ).result()
-        data = add_updated_at([dict(row) for row in rows_iter])
-        if not data:
-            logger.info("excluded_videos: no recent rows to sync")
-            return
-
-        inserted = clickhouse_insert(table="excluded_videos", data=data)
-        logger.info("excluded_videos: synced %s rows to ClickHouse", inserted)
-    except Exception:
-        logger.exception("ClickHouse sync failed for excluded_videos")
-        send_alert_to_google_chat(
-            text=(
-                "ClickHouse sync failed for ds__reported_nsfw_videos, but the BigQuery write "
-                "already completed. The DAG run will continue and ClickHouse catch-up is required."
-            )
-        )
-        return
+    logger.info("yral.excluded_videos banned row count: %s", banned_count)
+    logger.info(
+        "ds__reported_nsfw_videos is retired as a writer; manual bans are written by nsfw_detect"
+    )
 
 
 default_args = {
-    'owner': 'airflow',
-    'start_date': days_ago(1),
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    "owner": "airflow",
+    "start_date": days_ago(1),
+    "retries": 1,
+    "retry_delay": timedelta(minutes=5),
 }
 
 with DAG(
-    'ds__reported_nsfw_videos',
+    "ds__reported_nsfw_videos",
     default_args=default_args,
-    description='Maintains table of excluded videos: reported+NSFW (probability >= 0.4 OR nsfw_ec != neutral) OR banned',
-    schedule_interval='*/5 * * * *',
+    description="Retired BigQuery excluded_videos DAG; validates ClickHouse manual-ban tables",
+    schedule_interval=None,
     catchup=False,
-    is_paused_upon_creation=True
+    is_paused_upon_creation=True,
 ) as dag:
-
-    run_query_task = PythonOperator(
-        task_id='update_excluded_videos',
-        python_callable=update_excluded_videos,
-        on_failure_callback=send_alert_to_google_chat
+    validate_tables_task = PythonOperator(
+        task_id="validate_clickhouse_manual_ban_tables",
+        python_callable=validate_clickhouse_manual_ban_tables,
+        on_failure_callback=send_alert_to_google_chat,
     )
-
-    sync_ch_task = PythonOperator(
-        task_id='sync_to_clickhouse',
-        python_callable=sync_to_clickhouse,
-    )
-
-    run_query_task >> sync_ch_task
 
 
 if __name__ == "__main__":
-    update_excluded_videos()
+    validate_clickhouse_manual_ban_tables()
