@@ -1,6 +1,60 @@
+# OS / editor
 .DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.venv/
+
+# Local notebooks / tooling
 *.ipynb
-requirements.txt
-.venv
 settings.json
+requirements.txt
+
+# Docs: ignore markdown by default, allow repo docs
 *.md
+!README.md
+!composer-export/README.md
+!local-dag-cutover-review.md
+!rabbitmq/README.md
+!state-import/README.md
+
+# Env files with real values (keep *.env.example templates)
+.env
+.env.*
+!.env.example
+!**/*.env.example
+compose/*.env
+
+# Composer/Airflow exports (may contain secrets or internal inventory)
+composer-export/state/
+composer-export/package-inventory/environment-describe.json
+
+# Airflow state-import payloads with real values
+state-import/variables.json
+state-import/pools.json
+state-import/users.csv
+
+# Host secrets and cloud credentials
+secrets/
+**/gcp-service-account.json
+**/*service-account*.json
+**/*credentials*.json
+*.pem
+*.key
+
+# PgBouncer live config (keep *.example templates)
+pgbouncer/userlist.txt
+pgbouncer/pgbouncer.ini
+
+# Build artifacts / dumps / logs
+*.tar.gz
+*.tgz
+*.log
