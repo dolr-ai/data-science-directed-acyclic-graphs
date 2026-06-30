@@ -1,10 +1,15 @@
 from airflow import DAG
 from airflow.utils.dates import days_ago
 from airflow.operators.python_operator import PythonOperator
-from airflow_compat.bigquery import BigQueryExecuteQueryOperator
-from datetime import datetime
 from google.cloud import bigquery
 import requests
+
+from user_base_facts.clickhouse_utils import (
+    add_updated_at,
+    clickhouse_command,
+    clickhouse_insert,
+    clickhouse_table_row_count,
+)
 
 
 def send_alert_to_google_chat():
@@ -14,123 +19,56 @@ def send_alert_to_google_chat():
     }
     requests.post(webhook_url, json=message)
 
-init_ubf_query = """
-CREATE OR REPLACE TABLE `yral_ds.user_base_facts`
-CLUSTER BY user_id AS                             
-SELECT
-    user_id,
-    user_info,
-    device,
-    geo,
-    audiences,
-    user_properties,
-    user_ltv,
-    predictions,
-    privacy_info,
-    occurrence_date,
-    PARSE_DATE('%Y%m%d', CAST(last_updated_date AS STRING)) AS last_updated_date
-FROM (
-    SELECT
-        *,
-        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY last_updated_date DESC) AS row_num
-    FROM
-        `analytics_434929785.users_*`
-)
-WHERE row_num = 1
-"""
-
-
-
-update_ubf_query = """
-MERGE `yral_ds.user_base_facts` T
-USING (
-    SELECT
-        user_id,
-        user_info,
-        device,
-        geo,
-        audiences,
-        user_properties,
-        user_ltv,
-        predictions,
-        privacy_info,
-        occurrence_date,
-        PARSE_DATE('%Y%m%d', CAST(last_updated_date AS STRING)) AS last_updated_date
-    FROM (
-        SELECT
-            *,
-            ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY last_updated_date DESC) AS row_num
-        FROM
-            `analytics_434929785.users_*`
-        WHERE
-            PARSE_DATE('%Y%m%d', CAST(last_updated_date AS STRING)) >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
+def ensure_clickhouse_table():
+    clickhouse_command(
+        """
+        CREATE TABLE IF NOT EXISTS yral.user_base_facts ON CLUSTER yral_cluster
+        (
+            `user_id` String,
+            `region` Nullable(String),
+            `occurrence_date` Nullable(Date),
+            `last_updated_date` Date,
+            `_updated_at` DateTime64(3) DEFAULT now64(3)
+        )
+        ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/yral/user_base_facts', '{replica}', _updated_at)
+        ORDER BY user_id
+        SETTINGS index_granularity = 8192
+        """
     )
-    WHERE row_num = 1
-) S
-ON T.user_id = S.user_id
-WHEN MATCHED THEN
-    UPDATE SET
-        T.user_info = S.user_info,
-        T.device = S.device,
-        T.geo = S.geo,
-        T.audiences = S.audiences,
-        T.user_properties = S.user_properties,
-        T.user_ltv = S.user_ltv,
-        T.predictions = S.predictions,
-        T.privacy_info = S.privacy_info,
-        T.occurrence_date = S.occurrence_date,
-        T.last_updated_date = S.last_updated_date
-WHEN NOT MATCHED THEN
-    INSERT (
-        user_id,
-        user_info,
-        device,
-        geo,
-        audiences,
-        user_properties,
-        user_ltv,
-        predictions,
-        privacy_info,
-        occurrence_date,
-        last_updated_date
-    )
-    VALUES (
-        S.user_id,
-        S.user_info,
-        S.device,
-        S.geo,
-        S.audiences,
-        S.user_properties,
-        S.user_ltv,
-        S.predictions,
-        S.privacy_info,
-        S.occurrence_date,
-        S.last_updated_date
-    );
-"""
 
-def check_table_exists():
-    client = bigquery.Client()
-    query = """
-    SELECT COUNT(*)
-    FROM `yral_ds.INFORMATION_SCHEMA.TABLES`
-    WHERE table_name = 'user_base_facts'
-    """
-    query_job = client.query(query)
-    results = query_job.result()
-    for row in results:
-        return row[0] > 0
-    
+
 def updaet_or_init_ubf_table():
-    if check_table_exists():
-        query = update_ubf_query
-    else:
-        query = init_ubf_query
-    
-    client = bigquery.Client()
-    query_job = client.query(query)
-    query_job.result()
+    ensure_clickhouse_table()
+    is_bootstrap = clickhouse_table_row_count("user_base_facts") == 0
+    source_filter = ""
+    if not is_bootstrap:
+        source_filter = "WHERE PARSE_DATE('%Y%m%d', CAST(last_updated_date AS STRING)) >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)"
 
+    client = bigquery.Client()
+    rows_iter = client.query(
+        """
+        SELECT
+            user_id,
+            geo.region AS region,
+            occurrence_date,
+            PARSE_DATE('%Y%m%d', CAST(last_updated_date AS STRING)) AS last_updated_date
+        FROM (
+            SELECT
+                user_id,
+                geo,
+                occurrence_date,
+                last_updated_date,
+                ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY last_updated_date DESC) AS row_num
+            FROM `hot-or-not-feed-intelligence.analytics_434929785.users_*`
+            {source_filter}
+        )
+        WHERE row_num = 1
+        """.format(source_filter=source_filter)
+    ).result()
+    data = add_updated_at([dict(row) for row in rows_iter])
+    if not data:
+        return
+    clickhouse_insert(table="user_base_facts", data=data)
 
 
 default_args = {

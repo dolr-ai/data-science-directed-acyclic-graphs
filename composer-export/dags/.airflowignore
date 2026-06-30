@@ -3,3 +3,7 @@ airflow_monitoring\.py
 find_ip_dag\.py
 gcs_to_bigquery_metadata/gcs_to_bigquery_metadata\.py
 recsys-dags/dummy/dummy\.py
+video_embedding/video_embedding_dag\.py
+video_unique_v2/ds__video_unique_v2\.py
+recsys-dags/candidate_generation/.*
+event_ingestion/.*

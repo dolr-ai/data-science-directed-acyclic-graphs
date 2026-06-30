@@ -34,157 +34,12 @@ def send_alert_to_google_chat(context=None, text=None):
         logger.exception("Failed to send Google Chat alert for ds__follower_graph")
 
 
-def check_table_exists():
-    """Checks if the follower_graph table exists in BigQuery.
-
-    Algorithm:
-    1. Creates a BigQuery client
-    2. Queries INFORMATION_SCHEMA to check for table existence
-    3. Returns True if table exists, False otherwise
-
-    Returns:
-        bool: True if table exists, False otherwise
-    """
-    client = bigquery.Client()
-    query = """
-    SELECT COUNT(*)
-    FROM `hot-or-not-feed-intelligence.yral_ds.INFORMATION_SCHEMA.TABLES`
-    WHERE table_name = 'follower_graph'
-    """
-    query_job = client.query(query)
-    results = query_job.result()
-    for row in results:
-        return row[0] > 0
-
-
-def create_initial_query():
-    """Creates the initial SQL query to build follower_graph table from scratch.
-
-    Algorithm:
-    1. Creates or replaces the follower_graph table with partitioning and clustering
-    2. Extracts all follow/unfollow events from analytics_events
-    3. Uses QUALIFY ROW_NUMBER() to get the latest event per (follower_id, following_id) pair
-    4. Filters out events with NULL user_id or publisher_user_id
-
-    Returns:
-        str: SQL query string for initial table creation
-
-    Output Schema:
-        follower_id: STRING - user_id from event (person doing the following)
-        following_id: STRING - publisher_user_id from event (person being followed)
-        active: BOOL - true if currently following, false if unfollowed
-        last_updated_timestamp: TIMESTAMP - for watermarking incremental updates
-
-    Table Properties:
-        PARTITION BY DATE(last_updated_timestamp) - optimizes MAX() watermark query
-        CLUSTER BY follower_id, following_id - optimizes "who does X follow?" queries
-    """
-    return """
-CREATE OR REPLACE TABLE `hot-or-not-feed-intelligence.yral_ds.follower_graph`
-PARTITION BY DATE(last_updated_timestamp)
-CLUSTER BY follower_id, following_id
-AS
-SELECT
-  JSON_EXTRACT_SCALAR(params, '$.user_id') AS follower_id,
-  JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') AS following_id,
-  CASE WHEN event = 'mp_user_followed' THEN TRUE ELSE FALSE END AS active,
-  timestamp AS last_updated_timestamp
-FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`
-WHERE event IN ('mp_user_followed', 'mp_user_unfollowed')
-  AND JSON_EXTRACT_SCALAR(params, '$.user_id') IS NOT NULL
-  AND JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') IS NOT NULL
-QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY
-    JSON_EXTRACT_SCALAR(params, '$.user_id'),
-    JSON_EXTRACT_SCALAR(params, '$.publisher_user_id')
-  ORDER BY timestamp DESC
-) = 1
-"""
-
-
-def create_incremental_query():
-    """Creates the incremental SQL query to merge new follow/unfollow events.
-
-    Algorithm:
-    1. Uses CTE to fetch MAX(last_updated_timestamp) watermark from target table
-    2. Queries new events since watermark from analytics_events
-    3. Filters for mp_user_followed and mp_user_unfollowed events
-    4. Uses QUALIFY ROW_NUMBER() to get latest event per pair in the batch
-    5. Uses MERGE to upsert records:
-       - WHEN MATCHED: Updates active and last_updated_timestamp
-       - WHEN NOT MATCHED: Inserts new row
-
-    Note: Single query with CTE - no separate Python query needed for watermark.
-    Uses IFNULL to handle empty table case (defaults to 1970-01-01).
-
-    Returns:
-        str: SQL query string for incremental updates
-    """
-    return """
-MERGE `hot-or-not-feed-intelligence.yral_ds.follower_graph` T
-USING (
-  WITH last_ts AS (
-    SELECT MAX(last_updated_timestamp) as max_ts
-    FROM `hot-or-not-feed-intelligence.yral_ds.follower_graph`
-  )
-  SELECT
-    JSON_EXTRACT_SCALAR(params, '$.user_id') AS follower_id,
-    JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') AS following_id,
-    CASE WHEN event = 'mp_user_followed' THEN TRUE ELSE FALSE END AS active,
-    timestamp AS last_updated_timestamp
-  FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`, last_ts
-  WHERE event IN ('mp_user_followed', 'mp_user_unfollowed')
-    AND timestamp > IFNULL(last_ts.max_ts, TIMESTAMP('1970-01-01'))
-    AND JSON_EXTRACT_SCALAR(params, '$.user_id') IS NOT NULL
-    AND JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') IS NOT NULL
-  QUALIFY ROW_NUMBER() OVER (
-    PARTITION BY
-      JSON_EXTRACT_SCALAR(params, '$.user_id'),
-      JSON_EXTRACT_SCALAR(params, '$.publisher_user_id')
-    ORDER BY timestamp DESC
-  ) = 1
-) S
-ON T.follower_id = S.follower_id AND T.following_id = S.following_id
-WHEN MATCHED THEN
-  UPDATE SET
-    T.active = S.active,
-    T.last_updated_timestamp = S.last_updated_timestamp
-WHEN NOT MATCHED THEN
-  INSERT (follower_id, following_id, active, last_updated_timestamp)
-  VALUES (S.follower_id, S.following_id, S.active, S.last_updated_timestamp)
-"""
-
-
 def run_query():
-    """Main function to update follower_graph table.
-
-    Algorithm:
-    1. Checks if the table exists using check_table_exists()
-    2. If table exists: Runs incremental MERGE query (watermark fetched via CTE)
-    3. If table doesn't exist: Runs initial CREATE TABLE query
-    4. Executes the chosen query using BigQuery client
-    5. Waits for query completion
-    """
-    if check_table_exists():
-        query = create_incremental_query()
-        print("Running incremental update query...")
-    else:
-        query = create_initial_query()
-        print("Running initial table creation query...")
-
-    client = bigquery.Client()
-    query_job = client.query(query)
-    query_job.result()
-    print(f"Query completed successfully. Job ID: {query_job.job_id}")
-
-
-def sync_to_clickhouse():
-    """Sync recently written follower graph rows from BigQuery to ClickHouse."""
     try:
         if clickhouse_table_row_count("follower_graph") == 0:
             raise RuntimeError(
                 "ClickHouse bootstrap missing for yral.follower_graph; "
-                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
+                "complete bulk load before enabling ClickHouse-only writes"
             )
 
         client = bigquery.Client()
@@ -201,29 +56,37 @@ def sync_to_clickhouse():
         )
         rows_iter = client.query(
             """
-            SELECT follower_id, following_id, active, last_updated_timestamp
-            FROM `hot-or-not-feed-intelligence.yral_ds.follower_graph`
-            WHERE last_updated_timestamp >= TIMESTAMP_MILLIS(@lower_bound_ms)
+            SELECT
+              JSON_EXTRACT_SCALAR(params, '$.user_id') AS follower_id,
+              JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') AS following_id,
+              CASE WHEN event = 'mp_user_followed' THEN TRUE ELSE FALSE END AS active,
+              timestamp AS last_updated_timestamp
+            FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`
+            WHERE event IN ('mp_user_followed', 'mp_user_unfollowed')
+              AND timestamp >= TIMESTAMP_MILLIS(@lower_bound_ms)
+              AND JSON_EXTRACT_SCALAR(params, '$.user_id') IS NOT NULL
+              AND JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') IS NOT NULL
+            QUALIFY ROW_NUMBER() OVER (
+              PARTITION BY
+                JSON_EXTRACT_SCALAR(params, '$.user_id'),
+                JSON_EXTRACT_SCALAR(params, '$.publisher_user_id')
+              ORDER BY timestamp DESC
+            ) = 1
             ORDER BY last_updated_timestamp, follower_id, following_id
             """,
             job_config=job_config,
         ).result()
         data = add_updated_at([dict(row) for row in rows_iter])
         if not data:
-            logger.info("follower_graph: no recent rows to sync")
+            logger.info("follower_graph: no new source rows to write")
             return
 
         inserted = clickhouse_insert(table="follower_graph", data=data)
-        logger.info("follower_graph: synced %s rows to ClickHouse", inserted)
+        logger.info("follower_graph: wrote %s rows directly to ClickHouse", inserted)
     except Exception:
-        logger.exception("ClickHouse sync failed for follower_graph")
-        send_alert_to_google_chat(
-            text=(
-                "ClickHouse sync failed for ds__follower_graph, but the BigQuery write "
-                "already completed. The DAG run will continue and ClickHouse catch-up is required."
-            )
-        )
-        return
+        logger.exception("ClickHouse write failed for follower_graph")
+        send_alert_to_google_chat(text="ClickHouse write failed for ds__follower_graph.")
+        raise
 
 
 default_args = {
@@ -248,12 +111,6 @@ with DAG(
         on_failure_callback=send_alert_to_google_chat
     )
 
-    sync_ch_task = PythonOperator(
-        task_id='sync_to_clickhouse',
-        python_callable=sync_to_clickhouse,
-    )
-
-    run_query_task >> sync_ch_task
 
 
 if __name__ == "__main__":

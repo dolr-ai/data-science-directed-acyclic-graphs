@@ -32,126 +32,12 @@ def send_alert_to_google_chat(context=None, text=None):
     except Exception:
         logger.exception("Failed to send Google Chat alert for ds__bot_uploaded_content")
 
-def check_table_exists():
-    """Checks if the bot_uploaded_content table exists in BigQuery.
-
-    Algorithm:
-    1. Creates a BigQuery client
-    2. Queries INFORMATION_SCHEMA to check for table existence
-    3. Returns True if table exists, False otherwise
-
-    Returns:
-        bool: True if table exists, False otherwise
-    """
-    client = bigquery.Client()
-    query = """
-    SELECT COUNT(*)
-    FROM `yral_ds.INFORMATION_SCHEMA.TABLES`
-    WHERE table_name = 'bot_uploaded_content'
-    """
-    query_job = client.query(query)
-    results = query_job.result()
-    for row in results:
-        return row[0] > 0
-
-def create_initial_query():
-    """Creates the initial SQL query to build bot_uploaded_content table from scratch.
-
-    Algorithm:
-    1. Creates or replaces the bot_uploaded_content table
-    2. Partitions by DATE(timestamp) for efficient querying
-    3. Clusters by video_id for fast lookups and joins
-    4. Extracts bot upload events from test_events_analytics
-    5. Filters for video_upload_successful events where country ends with '-BOT'
-    6. Extracts relevant fields from JSON params
-
-    Returns:
-        str: SQL query string for initial table creation
-    """
-    return """
-CREATE OR REPLACE TABLE `yral_ds.bot_uploaded_content`
-PARTITION BY DATE(timestamp)
-CLUSTER BY video_id
-AS (
-    SELECT
-        JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
-        JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') AS publisher_user_id,
-        JSON_EXTRACT_SCALAR(params, '$.canister_id') AS canister_id,
-        JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
-        JSON_EXTRACT_SCALAR(params, '$.post_id') AS post_id,
-        JSON_EXTRACT_SCALAR(params, '$.country') AS country,
-        JSON_EXTRACT_SCALAR(params, '$.display_name') AS display_name,
-        timestamp
-    FROM `analytics_335143420.test_events_analytics`
-    WHERE event = 'video_upload_successful'
-      AND JSON_EXTRACT_SCALAR(params, '$.country') LIKE '%-BOT'
-)
-"""
-
-def create_incremental_query():
-    """Creates the incremental SQL query to merge new bot uploads into existing table.
-
-    Algorithm:
-    1. Finds the maximum timestamp from existing table
-    2. Queries test_events_analytics for new bot upload events after that timestamp
-    3. Uses MERGE to upsert new records based on video_id and timestamp
-    4. Inserts only records that don't already exist
-
-    Returns:
-        str: SQL query string for incremental updates
-    """
-    return """
-MERGE `yral_ds.bot_uploaded_content` AS target
-USING (
-    WITH last_ts AS (
-        SELECT MAX(timestamp) AS max_ts FROM `yral_ds.bot_uploaded_content`
-    )
-    SELECT
-        JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
-        JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') AS publisher_user_id,
-        JSON_EXTRACT_SCALAR(params, '$.canister_id') AS canister_id,
-        JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
-        JSON_EXTRACT_SCALAR(params, '$.post_id') AS post_id,
-        JSON_EXTRACT_SCALAR(params, '$.country') AS country,
-        JSON_EXTRACT_SCALAR(params, '$.display_name') AS display_name,
-        timestamp
-    FROM `analytics_335143420.test_events_analytics`, last_ts
-    WHERE event = 'video_upload_successful'
-      AND JSON_EXTRACT_SCALAR(params, '$.country') LIKE '%-BOT'
-      AND timestamp > IFNULL(last_ts.max_ts, TIMESTAMP('1970-01-01'))
-) AS source
-ON target.video_id = source.video_id AND target.timestamp = source.timestamp
-WHEN NOT MATCHED THEN
-    INSERT ROW
-"""
-
 def update_bot_uploaded_content():
-    """Main function to update bot_uploaded_content table.
-
-    Algorithm:
-    1. Checks if the table exists using check_table_exists()
-    2. If table exists, runs incremental query to add new records
-    3. If table doesn't exist, runs initial query to create and populate table
-    4. Executes the chosen query using BigQuery client
-    5. Waits for query completion
-    """
-    if check_table_exists():
-        query = create_incremental_query()
-    else:
-        query = create_initial_query()
-
-    client = bigquery.Client()
-    query_job = client.query(query)
-    query_job.result()
-
-
-def sync_to_clickhouse():
-    """Sync recently written bot-uploaded rows from BigQuery to ClickHouse."""
     try:
         if clickhouse_table_row_count("bot_uploaded_content") == 0:
             raise RuntimeError(
                 "ClickHouse bootstrap missing for yral.bot_uploaded_content; "
-                "complete Phase 2 bulk load before enabling Phase 3 dual-write"
+                "complete bulk load before enabling ClickHouse-only writes"
             )
 
         client = bigquery.Client()
@@ -169,36 +55,38 @@ def sync_to_clickhouse():
         rows_iter = client.query(
             """
             SELECT
-                user_id,
-                publisher_user_id,
-                canister_id,
-                video_id,
-                post_id,
-                country,
-                display_name,
+                JSON_EXTRACT_SCALAR(params, '$.user_id') AS user_id,
+                JSON_EXTRACT_SCALAR(params, '$.publisher_user_id') AS publisher_user_id,
+                JSON_EXTRACT_SCALAR(params, '$.canister_id') AS canister_id,
+                JSON_EXTRACT_SCALAR(params, '$.video_id') AS video_id,
+                JSON_EXTRACT_SCALAR(params, '$.post_id') AS post_id,
+                JSON_EXTRACT_SCALAR(params, '$.country') AS country,
+                JSON_EXTRACT_SCALAR(params, '$.display_name') AS display_name,
                 timestamp
-            FROM `hot-or-not-feed-intelligence.yral_ds.bot_uploaded_content`
-            WHERE timestamp >= TIMESTAMP_MILLIS(@lower_bound_ms)
+            FROM `hot-or-not-feed-intelligence.analytics_335143420.test_events_analytics`
+            WHERE event = 'video_upload_successful'
+              AND JSON_EXTRACT_SCALAR(params, '$.country') LIKE '%-BOT'
+              AND timestamp >= TIMESTAMP_MILLIS(@lower_bound_ms)
+            QUALIFY ROW_NUMBER() OVER (
+              PARTITION BY JSON_EXTRACT_SCALAR(params, '$.video_id')
+              ORDER BY timestamp DESC
+            ) = 1
             ORDER BY timestamp, video_id
             """,
             job_config=job_config,
         ).result()
         data = add_updated_at([dict(row) for row in rows_iter])
         if not data:
-            logger.info("bot_uploaded_content: no recent rows to sync")
+            logger.info("bot_uploaded_content: no new source rows to write")
             return
 
         inserted = clickhouse_insert(table="bot_uploaded_content", data=data)
-        logger.info("bot_uploaded_content: synced %s rows to ClickHouse", inserted)
+        logger.info("bot_uploaded_content: wrote %s rows directly to ClickHouse", inserted)
     except Exception:
-        logger.exception("ClickHouse sync failed for bot_uploaded_content")
-        send_alert_to_google_chat(
-            text=(
-                "ClickHouse sync failed for ds__bot_uploaded_content, but the BigQuery write "
-                "already completed. The DAG run will continue and ClickHouse catch-up is required."
-            )
-        )
-        return
+        logger.exception("ClickHouse write failed for bot_uploaded_content")
+        send_alert_to_google_chat(text="ClickHouse write failed for ds__bot_uploaded_content.")
+        raise
+
 
 default_args = {
     'owner': 'airflow',
@@ -222,9 +110,3 @@ with DAG(
         on_failure_callback=send_alert_to_google_chat
     )
 
-    sync_ch_task = PythonOperator(
-        task_id='sync_to_clickhouse',
-        python_callable=sync_to_clickhouse,
-    )
-
-    run_query_task >> sync_ch_task

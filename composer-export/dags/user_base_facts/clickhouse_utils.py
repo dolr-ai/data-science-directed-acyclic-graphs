@@ -1,11 +1,6 @@
-"""
-ClickHouse write utility for Airflow DAGs.
-Copied into each DAG folder to avoid cross-folder import assumptions.
-"""
-
 import datetime
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import clickhouse_connect
 from airflow.hooks.base import BaseHook
@@ -24,7 +19,6 @@ def _as_bool(value, default: bool) -> bool:
 
 
 def get_clickhouse_client():
-    """Create a ClickHouse client from the Airflow connection."""
     conn = BaseHook.get_connection("clickhouse_yral_prod")
     extra = conn.extra_dejson or {}
     secure = _as_bool(extra.get("secure"), True)
@@ -46,38 +40,20 @@ def clickhouse_command(query: str, client=None):
     return _client.command(query)
 
 
-def clickhouse_table_row_count(table: str, client=None) -> int:
-    """Return the current row count for a ClickHouse table."""
+def clickhouse_scalar(query: str, client=None):
     _client = client or get_clickhouse_client()
-    result = _client.query("SELECT count() FROM yral.{table}".format(table=table))
-    return int(result.result_rows[0][0])
-
-
-def clickhouse_scalar(query: str, parameters: Optional[Dict[str, Any]] = None, client=None):
-    """Return the first scalar value from a ClickHouse query."""
-    _client = client or get_clickhouse_client()
-    result = _client.query(query, parameters=parameters)
+    result = _client.query(query)
     if not result.result_rows:
         return None
     return result.result_rows[0][0]
 
 
-def clickhouse_max_timestamp_ms(table: str, column: str, client=None, final: bool = True) -> Optional[int]:
-    """Return max(timestamp_column) as epoch milliseconds."""
-    suffix = " FINAL" if final else ""
-    value = clickhouse_scalar(
-        "SELECT toUnixTimestamp64Milli(max({column})) FROM yral.{table}{suffix}".format(
-            column=column,
-            table=table,
-            suffix=suffix,
-        ),
-        client=client,
-    )
-    return int(value) if value is not None else None
+def clickhouse_table_row_count(table: str, client=None) -> int:
+    value = clickhouse_scalar("SELECT count() FROM yral.{table}".format(table=table), client=client)
+    return int(value or 0)
 
 
 def add_updated_at(rows: List[Dict]) -> List[Dict]:
-    """Add the ReplacingMergeTree version column to each row."""
     ts = datetime.datetime.now(datetime.timezone.utc)
     for row in rows:
         row["_updated_at"] = ts
@@ -85,7 +61,6 @@ def add_updated_at(rows: List[Dict]) -> List[Dict]:
 
 
 def clickhouse_insert(table: str, data: List[Dict], client: Optional[object] = None) -> int:
-    """Bulk insert a list of dicts into ClickHouse."""
     if not data:
         logger.warning("clickhouse_insert: empty data for table %s", table)
         return 0
@@ -93,7 +68,6 @@ def clickhouse_insert(table: str, data: List[Dict], client: Optional[object] = N
     _client = client or get_clickhouse_client()
     columns = list(data[0].keys())
     rows = [[row.get(column) for column in columns] for row in data]
-
     _client.insert(
         table="yral.{table}".format(table=table),
         data=rows,
