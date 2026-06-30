@@ -1,0 +1,20 @@
+# Airflow providers are intentionally unpinned here; the Dockerfile installs this
+# file under the official Airflow 2.10.5 constraints to keep provider versions
+# compatible with the base image. Keep apache-airflow pinned in this follow-up
+# pip install so provider installs cannot accidentally upgrade or downgrade it.
+# The sentry extra enables Airflow's native error-tracking integration.
+apache-airflow[sentry]==2.10.5
+apache-airflow-providers-google
+apache-airflow-providers-celery
+apache-airflow-providers-postgres
+
+# Added for S3-compatible remote logging to Hetzner object storage.
+apache-airflow-providers-amazon
+
+# Confirmed DAG/runtime dependencies already in use locally.
+clickhouse-connect
+google-cloud-bigquery
+google-cloud-dataproc
+google-cloud-storage
+pandas
+requests

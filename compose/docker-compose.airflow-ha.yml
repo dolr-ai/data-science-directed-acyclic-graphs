@@ -1,0 +1,109 @@
+x-airflow-common: &airflow-common
+  image: ${AIRFLOW_IMAGE:-ghcr.io/yral/data-science-airflow-selfhosted:2.10.5}
+  env_file:
+    - ./shared.env
+    - ./node.env
+  network_mode: host
+  hostname: ${AIRFLOW_NODE_NAME}
+  restart: unless-stopped
+  user: "${AIRFLOW_UID:-50000}:0"
+  entrypoint:
+    - /usr/bin/dumb-init
+    - --
+  volumes:
+    - ${AIRFLOW_LOG_DIR:-/var/lib/airflow/logs}:/opt/airflow/logs
+    - ${AIRFLOW_TMP_DIR:-/var/lib/airflow/tmp}:/opt/airflow/tmp
+    - ${AIRFLOW_SECRETS_DIR:-/etc/airflow/secrets}:/opt/airflow/secrets:ro
+    - ./wait-for-airflow-deps.sh:/usr/local/bin/wait-for-airflow-deps:ro
+  environment:
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__CORE__PLUGINS_FOLDER: /opt/airflow/plugins
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@127.0.0.1:${PGBOUNCER_PORT}/airflow_meta
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@127.0.0.1:${PGBOUNCER_PORT}/airflow_meta
+    AIRFLOW__CELERY__BROKER_URL: ${AIRFLOW_BROKER_URL}
+    AIRFLOW__SCHEDULER__USE_ROW_LEVEL_LOCKING: "True"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY}
+    AIRFLOW__WEBSERVER__BASE_URL: https://airflow.ansuman.yral.com
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+    AIRFLOW__LOGGING__REMOTE_LOGGING: "True"
+    AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: hetzner_s3_logs
+    AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: ${AIRFLOW_REMOTE_LOG_FOLDER}
+    AIRFLOW__METRICS__STATSD_ON: "False"
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: UTC
+    AIRFLOW__CORE__PARALLELISM: ${AIRFLOW_PARALLELISM:-32}
+    AIRFLOW__OPERATORS__DEFAULT_QUEUE: ${AIRFLOW_DEFAULT_QUEUE:-airflow_tasks}
+    AIRFLOW__CELERY__WORKER_CONCURRENCY: ${AIRFLOW_WORKER_CONCURRENCY:-8}
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: ${AIRFLOW_DAG_DIR_LIST_INTERVAL:-30}
+    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: ${AIRFLOW_MIN_FILE_PROCESS_INTERVAL:-30}
+    AIRFLOW__DATABASE__LOAD_DEFAULT_CONNECTIONS: "False"
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/secrets/gcp-service-account.json
+
+services:
+  airflow-init:
+    <<: *airflow-common
+    command:
+      - bash
+      - -lc
+      - airflow db migrate && airflow db check
+    profiles:
+      - init
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver-${AIRFLOW_NODE_NAME}
+    command:
+      - bash
+      - -lc
+      - bash /usr/local/bin/wait-for-airflow-deps && exec airflow webserver --port ${AIRFLOW_WEBSERVER_PORT:-8080}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:${AIRFLOW_WEBSERVER_PORT:-8080}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler-${AIRFLOW_NODE_NAME}
+    command:
+      - bash
+      - -lc
+      - bash /usr/local/bin/wait-for-airflow-deps && exec airflow scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "AIRFLOW__SENTRY__SENTRY_ON=False airflow jobs check --job-type SchedulerJob --hostname ${AIRFLOW_NODE_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: airflow-triggerer-${AIRFLOW_NODE_NAME}
+    command:
+      - bash
+      - -lc
+      - bash /usr/local/bin/wait-for-airflow-deps && exec airflow triggerer
+    healthcheck:
+      test: ["CMD-SHELL", "AIRFLOW__SENTRY__SENTRY_ON=False airflow jobs check --job-type TriggererJob --hostname ${AIRFLOW_NODE_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: airflow-worker-${AIRFLOW_NODE_NAME}
+    command:
+      - bash
+      - -lc
+      - bash /usr/local/bin/wait-for-airflow-deps && exec celery --app airflow.providers.celery.executors.celery_executor.app worker --hostname "airflow@${AIRFLOW_NODE_NAME}"
+    healthcheck:
+      test: ["CMD-SHELL", "AIRFLOW__SENTRY__SENTRY_ON=False celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d airflow@${AIRFLOW_NODE_NAME}"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 90s

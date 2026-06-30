@@ -1,0 +1,22 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-${RABBITMQ_HOSTNAME}
+    hostname: ${RABBITMQ_HOSTNAME}
+    restart: unless-stopped
+    network_mode: host
+    extra_hosts:
+      - "rabbitmq-ansuman-1:100.78.17.101"
+      - "rabbitmq-ansuman-2:100.79.99.107"
+      - "rabbitmq-ansuman-3:100.64.20.118"
+    environment:
+      RABBITMQ_USE_LONGNAME: "false"
+      RABBITMQ_NODENAME: ${RABBITMQ_NODE_NAME}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE}
+      RABBITMQ_DIST_PORT: "25672"
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - ${RABBITMQ_DATA_DIR:-/var/lib/rabbitmq}:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro

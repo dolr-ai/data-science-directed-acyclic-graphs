@@ -1,0 +1,7 @@
+[
+  {
+    "pool": "singleton_full_refresh",
+    "slots": 1,
+    "description": "Use for non-overlapping full-refresh DAGs such as global_popular_videos_l7d"
+  }
+]
